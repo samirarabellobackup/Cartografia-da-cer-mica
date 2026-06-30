@@ -1,0 +1,6 @@
+{
+  "name": "Cartografia da Cerâmica",
+  "description": "A principal plataforma digital e mapa colaborativo da cerâmica brasileira, conectando ceramistas, ateliês, escolas, fornecedores e eventos.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
