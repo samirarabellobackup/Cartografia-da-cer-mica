@@ -319,6 +319,20 @@ export interface AuditLog {
 }
 
 // Add our additional fields to Establishment using an inline union type
+export type EstablishmentRole = 'proprietario' | 'administrador' | 'editor' | 'colaborador' | 'financeiro';
+
+export interface EstablishmentTeamMember {
+  id: string;
+  establishmentId: string;
+  email: string;
+  name: string;
+  role: EstablishmentRole;
+  status: 'active' | 'suspended';
+  permissions: string[];
+  addedBy: string;
+  addedAt: string;
+}
+
 export interface EstablishmentWithHomologation extends Establishment {
   homologationStatus?: HomologationStatus;
   homologationChecklist?: HomologationChecklist;
@@ -327,6 +341,16 @@ export interface EstablishmentWithHomologation extends Establishment {
   notes?: string;
   instagramAccount?: string;
   documentCPF_CNPJ?: string;
+  ownerId?: string;
+  ownerEmail?: string;
+  team?: EstablishmentTeamMember[];
+  ownershipHistory?: string[];
+  requiresReverification?: boolean;
+  claimantEmail?: string;
+  claimantName?: string;
+  claimantDocument?: string;
+  claimantPhone?: string;
+  claimantJustification?: string;
 }
 
 

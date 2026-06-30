@@ -4,14 +4,16 @@ import {
   User, Sparkles, Eye, Smartphone, Calendar, ShoppingBag, Plus, 
   Settings, CreditCard, ShieldCheck, Check, Clock, EyeOff, BarChart3, ChevronRight, MapPin 
 } from 'lucide-react';
-import { Establishment, CeramicEvent, Product, PrivacyLevel } from '../types';
+import { Establishment, CeramicEvent, Product, PrivacyLevel, UserSession, EstablishmentRole, EstablishmentTeamMember, EstablishmentWithHomologation } from '../types';
 
 interface UserDashboardProps {
   establishments: Establishment[];
-  onUpdateEstablishment: (id: string, updates: Partial<Establishment>) => void;
+  onUpdateEstablishment: (id: string, updates: Partial<EstablishmentWithHomologation>) => void;
   onUpgradeToPremium: (id: string) => void;
   onAddEventToEstablishment: (estId: string, event: Omit<CeramicEvent, 'id' | 'establishmentId'>) => void;
   onAddProductToEstablishment: (estId: string, product: Omit<Product, 'id'>) => void;
+  currentSession: UserSession | null;
+  onAddAuditLog?: (action: string, details: string, establishmentId?: string, establishmentName?: string) => void;
 }
 
 export default function UserDashboard({
@@ -19,18 +21,77 @@ export default function UserDashboard({
   onUpdateEstablishment,
   onUpgradeToPremium,
   onAddEventToEstablishment,
-  onAddProductToEstablishment
+  onAddProductToEstablishment,
+  currentSession,
+  onAddAuditLog
 }: UserDashboardProps) {
-  // Filter only claimed establishments belonging to the user (mock user owns all claimed profiles or has claimed them)
-  const claimedEsts = establishments.filter((e) => e.claimed);
+  // Filter only claimed establishments belonging to the user based on active session
+  const claimedEsts = establishments.filter((e) => {
+    if (!e.claimed) return false;
+    if (!currentSession) return false;
+    // Admins and Super Admins can see everything
+    if (['super_admin', 'admin'].includes(currentSession.role)) {
+      return true;
+    }
+    const estWithH = e as EstablishmentWithHomologation;
+    // User is direct owner
+    if (estWithH.ownerEmail === currentSession.email || estWithH.ownerId === currentSession.id) {
+      return true;
+    }
+    // User is in the team and active
+    if (estWithH.team?.some(t => t.email === currentSession.email && t.status === 'active')) {
+      return true;
+    }
+    // Backward compatibility for newly claimed items that haven't been approved yet
+    if (estWithH.claimantEmail === currentSession.email) {
+      return true;
+    }
+    return false;
+  });
+
   const [selectedEstId, setSelectedEstId] = useState<string>(claimedEsts[0]?.id || '');
-  
-  const currentEst = establishments.find((e) => e.id === selectedEstId);
+  const currentEst = establishments.find((e) => e.id === selectedEstId) as EstablishmentWithHomologation | undefined;
+
+  // Helper to determine active user's hierarchical role
+  const getUserRoleInEstablishment = (est: EstablishmentWithHomologation | undefined): EstablishmentRole | null => {
+    if (!est || !currentSession) return null;
+    if (est.ownerEmail === currentSession.email || est.ownerId === currentSession.id) {
+      return 'proprietario';
+    }
+    const teamMember = est.team?.find(t => t.email === currentSession.email && t.status === 'active');
+    if (teamMember) {
+      return teamMember.role;
+    }
+    // If super admin, treat as proprietor
+    if (['super_admin', 'admin'].includes(currentSession.role)) {
+      return 'proprietario';
+    }
+    return null;
+  };
+
+  const userRole = getUserRoleInEstablishment(currentEst);
 
   // States
   const [isEditing, setIsEditing] = useState(false);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [checkoutStep, setCheckoutStep] = useState<'options' | 'pix' | 'card' | 'success'>('options');
+
+  // States for Team Invitation
+  const [showInviteForm, setShowInviteForm] = useState(false);
+  const [inviteName, setInviteName] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<EstablishmentRole>('editor');
+  const [inviteError, setInviteError] = useState('');
+  const [inviteSuccess, setInviteSuccess] = useState('');
+
+  // States for Ownership Transfer (Owner ID flow)
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferEmail, setTransferEmail] = useState('');
+  const [transferPassword, setTransferPassword] = useState('');
+  const [transferError, setTransferError] = useState('');
+  const [transferSuccess, setTransferSuccess] = useState('');
+  const [showMfaStep, setShowMfaStep] = useState(false);
+  const [mfaCode, setMfaCode] = useState('');
 
   // Form states for profile editor
   const [desc, setDesc] = useState(currentEst?.description || '');
@@ -59,15 +120,43 @@ export default function UserDashboard({
     e.preventDefault();
     if (!currentEst) return;
 
-    onUpdateEstablishment(currentEst.id, {
+    const isEditor = userRole === 'editor';
+    const isRestricted = userRole === 'colaborador' || userRole === 'financeiro';
+
+    if (isRestricted) {
+      alert('Seu nível de acesso atual (Colaborador/Financeiro) não possui autorização para alterar dados cadastrais do estabelecimento.');
+      return;
+    }
+
+    const updates: Partial<EstablishmentWithHomologation> = {
       description: desc,
       longDescription: longDesc,
-      privacy: privacy,
-      whatsapp: whatsapp,
       instagram: instagram,
       hours: hours
-    });
+    };
+
+    if (!isEditor) {
+      // Proprietários and Admins can edit structural contacts
+      updates.whatsapp = whatsapp;
+      updates.privacy = privacy;
+    } else {
+      // If editor, block phone/privacy alterations and notify
+      if (whatsapp !== currentEst.whatsapp || privacy !== currentEst.privacy) {
+        alert('Nível Editor: Você não tem permissão para alterar contatos principais (WhatsApp) ou nível de privacidade. Essas alterações foram descartadas.');
+      }
+    }
+
+    onUpdateEstablishment(currentEst.id, updates);
     setIsEditing(false);
+
+    if (onAddAuditLog) {
+      onAddAuditLog(
+        'Edição de Perfil',
+        `O usuário ${currentSession?.name || 'Membro'} atualizou dados editoriais do espaço. Perfil de acesso: ${userRole?.toUpperCase()}`,
+        currentEst.id,
+        currentEst.name
+      );
+    }
   };
 
   const handleSelectEstablishment = (id: string) => {
@@ -87,6 +176,11 @@ export default function UserDashboard({
     e.preventDefault();
     if (!currentEst || !evTitle.trim()) return;
 
+    if (userRole === 'financeiro') {
+      alert('Acesso negado: Usuários com o perfil Financeiro não podem criar cursos ou eventos.');
+      return;
+    }
+
     onAddEventToEstablishment(currentEst.id, {
       title: evTitle,
       type: evType,
@@ -101,11 +195,25 @@ export default function UserDashboard({
     setEvPrice('');
     setEvDesc('');
     setShowAddEvent(false);
+
+    if (onAddAuditLog) {
+      onAddAuditLog(
+        'Criação de Curso',
+        `Curso "${evTitle}" adicionado ao calendário por ${currentSession?.name} (${userRole?.toUpperCase()})`,
+        currentEst.id,
+        currentEst.name
+      );
+    }
   };
 
   const handleAddProductSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentEst || !pName.trim()) return;
+
+    if (userRole === 'financeiro') {
+      alert('Acesso negado: Usuários com o perfil Financeiro não podem cadastrar produtos.');
+      return;
+    }
 
     onAddProductToEstablishment(currentEst.id, {
       name: pName,
@@ -119,6 +227,15 @@ export default function UserDashboard({
     setPPrice(0);
     setPDesc('');
     setShowAddProduct(false);
+
+    if (onAddAuditLog) {
+      onAddAuditLog(
+        'Cadastro de Produto',
+        `Produto "${pName}" adicionado à vitrine digital por ${currentSession?.name} (${userRole?.toUpperCase()})`,
+        currentEst.id,
+        currentEst.name
+      );
+    }
   };
 
   const handlePremiumUpgradeSuccess = () => {
@@ -129,6 +246,246 @@ export default function UserDashboard({
       setShowCheckoutModal(false);
       setCheckoutStep('options');
     }, 2500);
+  };
+
+  // Action: Invite Team Member
+  const handleInviteSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setInviteError('');
+    setInviteSuccess('');
+
+    if (!inviteName.trim() || !inviteEmail.trim()) {
+      setInviteError('Por favor, preencha o nome e e-mail do convidado.');
+      return;
+    }
+
+    if (!currentEst) return;
+
+    // Permissions check: only Proprietário and Administrador can invite
+    if (userRole !== 'proprietario' && userRole !== 'administrador') {
+      setInviteError('Apenas Proprietários e Administradores podem gerenciar a equipe do estabelecimento.');
+      return;
+    }
+
+    // Double-check if the member is already on the team
+    const currentTeam = currentEst.team || [];
+    if (currentTeam.some(m => m.email.toLowerCase() === inviteEmail.toLowerCase())) {
+      setInviteError('Este e-mail já está associado a um membro da equipe deste ateliê.');
+      return;
+    }
+
+    const newMember: EstablishmentTeamMember = {
+      id: 'tm_' + Math.floor(100000 + Math.random() * 900000),
+      establishmentId: currentEst.id,
+      email: inviteEmail.trim().toLowerCase(),
+      name: inviteName.trim(),
+      role: inviteRole,
+      status: 'active',
+      permissions: inviteRole === 'administrador' ? ['all'] : ['edit_content'],
+      addedBy: currentSession?.name || 'Proprietário',
+      addedAt: new Date().toISOString().replace('T', ' ').substring(0, 19)
+    };
+
+    const updatedTeam = [...currentTeam, newMember];
+    onUpdateEstablishment(currentEst.id, { team: updatedTeam });
+
+    setInviteSuccess(`Convite enviado com sucesso para ${inviteName}!`);
+    setInviteName('');
+    setInviteEmail('');
+    setInviteRole('editor');
+
+    if (onAddAuditLog) {
+      onAddAuditLog(
+        'Membro Adicionado à Equipe',
+        `Novo integrante ${newMember.name} convidado como ${newMember.role.toUpperCase()} por ${currentSession?.name}.`,
+        currentEst.id,
+        currentEst.name
+      );
+    }
+  };
+
+  // Action: Toggle Member Status (Suspend or Activate)
+  const handleToggleMemberStatus = (memberId: string) => {
+    if (!currentEst) return;
+
+    if (userRole !== 'proprietario' && userRole !== 'administrador') {
+      alert('Apenas Proprietários e Administradores podem alterar o status de membros da equipe.');
+      return;
+    }
+
+    const currentTeam = currentEst.team || [];
+    const targetMember = currentTeam.find(m => m.id === memberId);
+    if (!targetMember) return;
+
+    // Rules:
+    // 1. Cannot suspend/remove the Proprietário
+    if (targetMember.role === 'proprietario') {
+      alert('Ação bloqueada: O Proprietário Oficial e detentor do Owner ID não pode ser suspenso ou removido da equipe.');
+      return;
+    }
+
+    // 2. Administrador cannot suspend/remove other Administradors or Proprietário
+    if (userRole === 'administrador' && targetMember.role === 'administrador') {
+      alert('Ação bloqueada: Administradores de suporte não podem alterar o status de outros administradores.');
+      return;
+    }
+
+    const updatedTeam = currentTeam.map(m => {
+      if (m.id === memberId) {
+        return { ...m, status: m.status === 'active' ? 'suspended' : 'active' } as EstablishmentTeamMember;
+      }
+      return m;
+    });
+
+    onUpdateEstablishment(currentEst.id, { team: updatedTeam });
+
+    if (onAddAuditLog) {
+      onAddAuditLog(
+        'Status de Membro Alterado',
+        `Membro ${targetMember.name} teve o acesso alterado para ${targetMember.status === 'active' ? 'SUSPENSO' : 'ATIVO'} por ${currentSession?.name}.`,
+        currentEst.id,
+        currentEst.name
+      );
+    }
+  };
+
+  // Action: Remove Member
+  const handleRemoveMember = (memberId: string) => {
+    if (!currentEst) return;
+
+    if (userRole !== 'proprietario' && userRole !== 'administrador') {
+      alert('Apenas Proprietários e Administradores podem remover membros da equipe.');
+      return;
+    }
+
+    const currentTeam = currentEst.team || [];
+    const targetMember = currentTeam.find(m => m.id === memberId);
+    if (!targetMember) return;
+
+    if (targetMember.role === 'proprietario') {
+      alert('Ação bloqueada: O Proprietário e detentor do Owner ID não pode ser removido.');
+      return;
+    }
+
+    if (userRole === 'administrador' && targetMember.role === 'administrador') {
+      alert('Ação bloqueada: Administradores de suporte não podem remover outros administradores.');
+      return;
+    }
+
+    if (!confirm(`Tem certeza de que deseja remover ${targetMember.name} da equipe?`)) {
+      return;
+    }
+
+    const updatedTeam = currentTeam.filter(m => m.id !== memberId);
+    onUpdateEstablishment(currentEst.id, { team: updatedTeam });
+
+    if (onAddAuditLog) {
+      onAddAuditLog(
+        'Membro Removido da Equipe',
+        `Integrante ${targetMember.name} (${targetMember.email}) removido da equipe por ${currentSession?.name}.`,
+        currentEst.id,
+        currentEst.name
+      );
+    }
+  };
+
+  // Action: Ownership Transfer (Step-by-step with secure MFA simulation)
+  const handleTransferSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setTransferError('');
+    setTransferSuccess('');
+
+    if (!transferEmail.trim() || !transferPassword.trim()) {
+      setTransferError('Por favor, preencha todos os campos.');
+      return;
+    }
+
+    if (!currentEst) return;
+
+    // Rules:
+    // Only Proprietário (Owner ID owner) or Super Admin can transfer ownership
+    if (userRole !== 'proprietario') {
+      setTransferError('Ação exclusiva de Proprietário: Apenas o detentor do Owner ID atual pode transferir a propriedade digital deste ateliê.');
+      return;
+    }
+
+    if (transferEmail.toLowerCase() === currentEst.ownerEmail?.toLowerCase()) {
+      setTransferError('O e-mail de destino já é o proprietário atual deste estabelecimento.');
+      return;
+    }
+
+    // Step 1: MFA check simulation
+    if (!showMfaStep) {
+      // Show MFA simulation verification
+      setShowMfaStep(true);
+      return;
+    }
+
+    // Step 2: Code confirmation
+    if (mfaCode !== '123456') {
+      setTransferError('Código de verificação MFA inválido. Use o simulador de token (digite 123456).');
+      return;
+    }
+
+    // Success! Perform ownership transfer
+    const originalOwnerName = currentSession?.name || 'Antigo Proprietário';
+    const originalOwnerEmail = currentEst.ownerEmail || 'antigo@exemplo.com';
+    const generatedOwnerId = 'owner_' + Math.floor(100000 + Math.random() * 900000);
+    const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+
+    const historyLine = `Propriedade digital transferida de ${originalOwnerName} (${originalOwnerEmail}) para ${transferEmail} sob novo Owner ID: ${generatedOwnerId} em ${timestamp}.`;
+    const newHistory = [...(currentEst.ownershipHistory || []), historyLine];
+
+    // Re-initialize the team with the new Proprietário, and demote the old proprietor to Administrador so they don't get completely locked out immediately
+    const currentTeam = currentEst.team || [];
+    const updatedTeam = currentTeam.map(m => {
+      if (m.role === 'proprietario') {
+        return { ...m, role: 'administrador', name: `${m.name} (Ex-Proprietário)` } as EstablishmentTeamMember;
+      }
+      return m;
+    });
+
+    // Add new proprietor to team
+    const newProprietorMember: EstablishmentTeamMember = {
+      id: 'tm_' + Math.floor(100000 + Math.random() * 900000),
+      establishmentId: currentEst.id,
+      email: transferEmail.trim().toLowerCase(),
+      name: 'Novo Proprietário',
+      role: 'proprietario',
+      status: 'active',
+      permissions: ['all'],
+      addedBy: 'Transferência de Titularidade (MFA)',
+      addedAt: timestamp
+    };
+
+    updatedTeam.push(newProprietorMember);
+
+    onUpdateEstablishment(currentEst.id, {
+      ownerId: generatedOwnerId,
+      ownerEmail: transferEmail.trim().toLowerCase(),
+      ownershipHistory: newHistory,
+      team: updatedTeam
+    });
+
+    setTransferSuccess('Sucesso! Propriedade digital transferida. Um novo Owner ID foi gerado de forma permanente.');
+    
+    if (onAddAuditLog) {
+      onAddAuditLog(
+        'Transferência de Propriedade Homologada',
+        `Titularidade transferida de ${originalOwnerEmail} para ${transferEmail}. Novo Owner ID: ${generatedOwnerId} gerado de forma irreversível.`,
+        currentEst.id,
+        currentEst.name
+      );
+    }
+
+    setTimeout(() => {
+      setShowTransferModal(false);
+      setShowMfaStep(false);
+      setTransferEmail('');
+      setTransferPassword('');
+      setMfaCode('');
+      setTransferSuccess('');
+    }, 3000);
   };
 
   if (claimedEsts.length === 0) {
@@ -260,6 +617,178 @@ export default function UserDashboard({
                   <span className="font-semibold text-gray-800">{currentEst.neighborhood}</span>
                 </div>
               </div>
+            </div>
+
+            {/* Owner ID & Team Management (Módulo Owner ID & Equipe) */}
+            <div className="p-4 bg-amber-50/50 border border-amber-100 rounded-2xl space-y-4 text-xs">
+              <div className="space-y-1">
+                <h3 className="text-xs font-bold text-amber-900 uppercase tracking-wide flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-amber-600" /> Propriedade & Equipe
+                </h3>
+                <p className="text-[10px] text-amber-800 leading-normal">Apenas o detentor da propriedade (Proprietário Titular) possui privilégios de transferência.</p>
+              </div>
+
+              {/* Owner ID Banner */}
+              <div className="p-3 bg-white border border-amber-200 rounded-xl space-y-1.5 shadow-sm">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-amber-800 uppercase font-bold tracking-wide">Owner ID Permanente</span>
+                  <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-black uppercase">Ativo</span>
+                </div>
+                <p className="font-mono text-[11px] font-bold text-gray-800 bg-gray-50 p-1.5 rounded border border-gray-100 select-all select-text">
+                  {currentEst.ownerId || 'owner_imported_pending'}
+                </p>
+                <div className="text-[10px] text-gray-500 pt-0.5">
+                  👤 <strong>Dono:</strong> {currentEst.ownerEmail}
+                </div>
+                {userRole === 'proprietario' && (
+                  <button
+                    onClick={() => {
+                      setShowTransferModal(true);
+                      setShowMfaStep(false);
+                      setTransferError('');
+                      setTransferSuccess('');
+                    }}
+                    className="w-full mt-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors shadow-sm"
+                  >
+                    🔄 Transferir Titularidade (Owner ID)
+                  </button>
+                )}
+              </div>
+
+              {/* Your Active Role Notice */}
+              <div className="p-2.5 bg-white/70 border border-gray-100 rounded-lg flex items-center justify-between text-[11px]">
+                <span className="text-gray-500">Seu nível hierárquico:</span>
+                <span className="font-bold text-terracotta bg-terracotta/5 px-2 py-0.5 rounded uppercase text-[10px]">
+                  {userRole?.toUpperCase()}
+                </span>
+              </div>
+
+              {/* Team list */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <h4 className="font-bold text-gray-700 uppercase text-[10px] tracking-wider">Membros da Equipe ({currentEst.team?.length || 1})</h4>
+                  {(userRole === 'proprietario' || userRole === 'administrador') && (
+                    <button
+                      onClick={() => setShowInviteForm(!showInviteForm)}
+                      className="text-[10px] text-terracotta hover:underline font-bold cursor-pointer bg-transparent border-0"
+                    >
+                      {showInviteForm ? 'Fechar' : '+ Convidar'}
+                    </button>
+                  )}
+                </div>
+
+                {/* Invite Form */}
+                {showInviteForm && (
+                  <form onSubmit={handleInviteSubmit} className="p-3 bg-white border border-gray-200 rounded-xl space-y-2.5 shadow-sm text-xs">
+                    <h5 className="font-bold text-gray-800 text-[11px]">Novo Integrante da Equipe</h5>
+                    
+                    {inviteError && <p className="text-[10px] text-red-600 bg-red-50 p-1 rounded font-medium">{inviteError}</p>}
+                    {inviteSuccess && <p className="text-[10px] text-emerald-700 bg-emerald-50 p-1 rounded font-medium">{inviteSuccess}</p>}
+
+                    <div className="space-y-1.5">
+                      <input
+                        type="text"
+                        placeholder="Nome do integrante"
+                        value={inviteName}
+                        onChange={(e) => setInviteName(e.target.value)}
+                        className="w-full p-1.5 text-[11px] rounded border border-gray-200 focus:outline-none"
+                      />
+                      <input
+                        type="email"
+                        placeholder="E-mail de login"
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        className="w-full p-1.5 text-[11px] rounded border border-gray-200 focus:outline-none"
+                      />
+                      <select
+                        value={inviteRole}
+                        onChange={(e) => setInviteRole(e.target.value as any)}
+                        className="w-full p-1.5 text-[11px] rounded border border-gray-200 focus:outline-none bg-white"
+                      >
+                        <option value="administrador">Administrador (Suporte)</option>
+                        <option value="editor">Editor (Conteúdos)</option>
+                        <option value="colaborador">Colaborador (Agenda)</option>
+                        <option value="financeiro">Financeiro (Faturas)</option>
+                      </select>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-[10px] cursor-pointer"
+                    >
+                      Convidar e Autorizar Acesso
+                    </button>
+                  </form>
+                )}
+
+                {/* List item rendering */}
+                <div className="space-y-1.5">
+                  {/* Always render proprietor first */}
+                  <div className="p-2 bg-white rounded-lg border border-gray-100 flex justify-between items-center shadow-xs">
+                    <div>
+                      <p className="font-bold text-gray-900">{currentEst.claimantName || 'Proprietário Oficial'}</p>
+                      <p className="text-[9px] text-gray-400 font-mono select-all select-text">{currentEst.ownerEmail}</p>
+                    </div>
+                    <span className="text-[9px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded uppercase">
+                      PROPRIETÁRIO
+                    </span>
+                  </div>
+
+                  {/* Render other team members */}
+                  {currentEst.team?.filter(m => m.role !== 'proprietario').map((member) => (
+                    <div key={member.id} className="p-2 bg-white rounded-lg border border-gray-100 flex flex-col gap-1.5 shadow-xs">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="font-bold text-gray-900 flex items-center gap-1">
+                            {member.name}
+                            {member.status === 'suspended' && (
+                              <span className="text-[8px] bg-red-100 text-red-700 px-1 rounded font-bold">SUSPENSO</span>
+                            )}
+                          </p>
+                          <p className="text-[9px] text-gray-400 font-mono select-all select-text">{member.email}</p>
+                        </div>
+                        <span className="text-[9px] bg-gray-100 text-gray-700 font-bold px-1.5 py-0.5 rounded uppercase">
+                          {member.role}
+                        </span>
+                      </div>
+
+                      {/* Management actions */}
+                      {(userRole === 'proprietario' || userRole === 'administrador') && (
+                        <div className="flex justify-end gap-2 border-t border-gray-50 pt-1.5 mt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleMemberStatus(member.id)}
+                            className="text-[9px] font-bold text-gray-500 hover:text-earth-dark cursor-pointer bg-transparent border-0"
+                          >
+                            {member.status === 'active' ? '🔑 Suspender' : '✅ Reativar'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMember(member.id)}
+                            className="text-[9px] font-bold text-red-500 hover:text-red-700 cursor-pointer bg-transparent border-0"
+                          >
+                            🗑️ Remover
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* History trail */}
+              {currentEst.ownershipHistory && currentEst.ownershipHistory.length > 0 && (
+                <div className="space-y-1.5 border-t border-amber-100/50 pt-2.5">
+                  <span className="text-[9px] text-amber-900 uppercase font-bold tracking-wide block">Rastro de Propriedade (Auditado)</span>
+                  <div className="space-y-1 max-h-24 overflow-y-auto bg-white/50 p-2 rounded-lg border border-amber-100/30">
+                    {currentEst.ownershipHistory.map((line, idx) => (
+                      <p key={idx} className="text-[9px] text-gray-500 leading-normal border-b border-gray-100/40 pb-1 last:border-0 last:pb-0 font-sans italic">
+                        🛡️ {line}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
           </div>
@@ -777,6 +1306,126 @@ export default function UserDashboard({
                   <h3 className="text-base font-bold text-gray-900">Upgrade Concluído com Sucesso!</h3>
                   <p className="text-xs text-gray-400">Bem-vindo à comunidade Premium CeraMapa. Seus recursos foram liberados.</p>
                 </div>
+              )}
+
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ========================================== */}
+      {/* OWNER ID TRANSFER MODAL WITH MFA           */}
+      {/* ========================================== */}
+      <AnimatePresence>
+        {showTransferModal && currentEst && (
+          <div className="fixed inset-0 z-[2100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl border border-amber-200 p-6 max-w-md w-full shadow-2xl relative font-sans"
+            >
+              <button 
+                onClick={() => setShowTransferModal(false)} 
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 font-bold text-lg cursor-pointer bg-transparent border-0"
+              >
+                ×
+              </button>
+
+              <div className="text-center space-y-1.5 mb-5">
+                <span className="p-2 bg-amber-50 rounded-full border border-amber-200 text-amber-700 inline-block">
+                  <ShieldCheck className="w-6 h-6" />
+                </span>
+                <h3 className="text-base font-bold text-gray-900">
+                  Transferir Propriedade Digital (Módulo Owner ID)
+                </h3>
+                <p className="text-xs text-gray-400 leading-normal">
+                  Transfira permanentemente a propriedade do ateliê <strong>{currentEst.name}</strong> para outro e-mail cadastrado. Um novo Owner ID exclusivo será gerado.
+                </p>
+              </div>
+
+              {transferError && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-semibold mb-4 leading-normal">
+                  ⚠️ {transferError}
+                </div>
+              )}
+
+              {transferSuccess && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold mb-4 leading-normal">
+                  🎉 {transferSuccess}
+                </div>
+              )}
+
+              {!transferSuccess && (
+                <form onSubmit={handleTransferSubmit} className="space-y-4 text-xs">
+                  {!showMfaStep ? (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-gray-600 font-bold mb-1">E-mail do Novo Proprietário *</label>
+                        <input 
+                          type="email" 
+                          required 
+                          value={transferEmail}
+                          onChange={(e) => setTransferEmail(e.target.value)}
+                          placeholder="Ex: novo_ceramista@gmail.com" 
+                          className="w-full p-2.5 rounded-lg border border-clay-border focus:outline-none focus:border-terracotta bg-white text-earth-dark text-xs" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-gray-600 font-bold mb-1">Sua Senha de Confirmação *</label>
+                        <input 
+                          type="password" 
+                          required 
+                          value={transferPassword}
+                          onChange={(e) => setTransferPassword(e.target.value)}
+                          placeholder="Digite sua senha de login" 
+                          className="w-full p-2.5 rounded-lg border border-clay-border focus:outline-none focus:border-terracotta bg-white text-earth-dark text-xs" 
+                        />
+                      </div>
+                      <div className="p-3 bg-amber-50/70 border border-amber-100 rounded-xl text-[10px] text-amber-900 leading-normal">
+                        🚨 <strong>Atenção:</strong> Ao clicar em prosseguir, você iniciará uma transferência irrevogável. O novo e-mail assumirá o controle total do perfil e herdará o Owner ID atualizado.
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3.5">
+                      <div className="p-3 bg-blue-50 border border-blue-200 text-blue-800 rounded-xl leading-normal text-[11px]">
+                        🔐 <strong>Dupla Validação Ativada (MFA):</strong> Enviamos um código de segurança temporário para o e-mail do proprietário atual (<strong>{currentEst.ownerEmail}</strong>) para fins de auditoria.
+                      </div>
+                      <div>
+                        <label className="block text-blue-900 font-bold mb-1">Código de Segurança MFA *</label>
+                        <input 
+                          type="text" 
+                          maxLength={6}
+                          required 
+                          value={mfaCode}
+                          onChange={(e) => setMfaCode(e.target.value)}
+                          placeholder="Digite o código (Use 123456)" 
+                          className="w-full p-2.5 rounded-lg border border-blue-300 bg-white text-center text-sm font-bold tracking-widest text-blue-900 focus:outline-none focus:ring-1 focus:ring-blue-500" 
+                        />
+                        <span className="text-[10px] text-blue-600 block mt-1.5 text-center">💡 Código simulado: digite <strong>123456</strong> para homologar.</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowTransferModal(false);
+                        setShowMfaStep(false);
+                      }}
+                      className="w-1/2 py-2.5 font-bold rounded-xl border border-clay-border text-earth-dark hover:bg-gray-100 cursor-pointer text-xs"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="w-1/2 py-2.5 font-bold rounded-xl bg-amber-600 hover:bg-amber-700 text-white cursor-pointer shadow-sm text-xs"
+                    >
+                      {!showMfaStep ? 'Iniciar Transferência' : 'Validar e Confirmar'}
+                    </button>
+                  </div>
+                </form>
               )}
 
             </motion.div>

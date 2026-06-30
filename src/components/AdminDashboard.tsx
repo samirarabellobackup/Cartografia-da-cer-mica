@@ -771,41 +771,68 @@ export default function AdminDashboard({
             </p>
           </div>
 
-          {establishments.filter(e => e.claimed && !e.isPremium && e.id !== 'e1' && e.id !== 'e2').length > 0 ? (
+          {establishments.filter(e => e.claimed && !e.ownerId).length > 0 ? (
             <div className="space-y-3">
-              {establishments.filter(e => e.claimed && !e.isPremium && e.id !== 'e1' && e.id !== 'e2').map((est) => (
-                <div key={est.id} className="p-4 border border-clay-border bg-sand-card/30 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 text-xs font-sans">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-1.5">
-                      <h4 className="font-bold text-sm text-earth-dark">{est.name}</h4>
-                      <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">
-                        Aguardando Auditoria
-                      </span>
-                    </div>
-                    <p className="text-earth-gray font-medium">
-                      📍 {est.city} - {est.state} ({est.neighborhood})
-                    </p>
-                    <p className="text-earth-gray text-[11px]">
-                      Instagram: <strong className="text-terracotta">{est.instagram}</strong> | WhatsApp: <strong className="text-terracotta">{est.whatsapp}</strong>
-                    </p>
-                  </div>
+              {establishments.filter(e => e.claimed && !e.ownerId).map((est) => {
+                const estWithH = est as any;
+                return (
+                  <div key={est.id} className="p-4 border border-clay-border bg-sand-card/30 rounded-xl flex flex-col justify-between gap-4 text-xs font-sans">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 border-b border-gray-100 pb-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="font-bold text-sm text-earth-dark">{est.name}</h4>
+                          <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">
+                            Aguardando Auditoria
+                          </span>
+                        </div>
+                        <p className="text-earth-gray font-medium">
+                          📍 {est.city} - {est.state} ({est.neighborhood})
+                        </p>
+                        <p className="text-earth-gray text-[11px]">
+                          Instagram: <strong className="text-terracotta">{est.instagram}</strong> | WhatsApp: <strong className="text-terracotta">{est.whatsapp}</strong>
+                        </p>
+                      </div>
 
-                  <div className="flex gap-2 w-full md:w-auto justify-end">
-                    <button 
-                      onClick={() => onRejectClaim(est.id)}
-                      className="px-3 py-1.5 rounded-lg border border-clay-border text-earth-dark hover:bg-gray-100 text-xs font-semibold cursor-pointer"
-                    >
-                      Recusar
-                    </button>
-                    <button 
-                      onClick={() => onApproveClaim(est.id)}
-                      className="px-3.5 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold cursor-pointer shadow-sm"
-                    >
-                      Aprovar e Liberar Painel
-                    </button>
+                      <div className="flex gap-2 w-full md:w-auto justify-end">
+                        <button 
+                          onClick={() => onRejectClaim(est.id)}
+                          className="px-3 py-1.5 rounded-lg border border-clay-border text-earth-dark hover:bg-gray-100 text-xs font-semibold cursor-pointer"
+                        >
+                          Recusar
+                        </button>
+                        <button 
+                          onClick={() => onApproveClaim(est.id)}
+                          className="px-3.5 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold cursor-pointer shadow-sm"
+                        >
+                          Aprovar e Liberar Painel
+                        </button>
+                      </div>
+                    </div>
+
+                    {estWithH.claimantEmail && (
+                      <div className="p-3 bg-white/80 rounded-lg border border-gray-100 space-y-1 text-[11px] text-gray-700">
+                        <p className="font-bold text-gray-900 flex items-center gap-1">
+                          📋 Dados Enviados pelo Reivindicante:
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 pt-1">
+                          <p>👤 <strong>Nome do Responsável:</strong> {estWithH.claimantName}</p>
+                          <p>📧 <strong>E-mail Principal:</strong> {estWithH.claimantEmail}</p>
+                          <p>📞 <strong>Telefone/WhatsApp:</strong> {estWithH.claimantPhone}</p>
+                          <p>🆔 <strong>Documento (CPF/CNPJ):</strong> {estWithH.claimantDocument}</p>
+                        </div>
+                        {estWithH.claimantJustification && (
+                          <p className="pt-1.5 border-t border-gray-100/60 mt-1.5">
+                            💬 <strong>Justificativa/Vínculo:</strong> <span className="italic text-gray-600">"{estWithH.claimantJustification}"</span>
+                          </p>
+                        )}
+                        <p className="text-[10px] text-amber-700 bg-amber-50/70 px-2 py-1 rounded inline-block mt-2 font-medium">
+                          ⚠️ Aprovando, o sistema gerará automaticamente um <strong>Owner ID</strong> e o associará a este e-mail.
+                        </p>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="text-center py-12 bg-gray-50 border border-dashed border-clay-border rounded-xl text-earth-gray">

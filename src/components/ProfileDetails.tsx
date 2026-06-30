@@ -5,15 +5,16 @@ import {
   Send, ShieldCheck, Video, Image as ImageIcon, ChevronRight, MessageSquare, 
   Sparkles, Plus, Check, Award
 } from 'lucide-react';
-import { Establishment, CeramicEvent, Product, Review, PlanConfig } from '../types';
+import { Establishment, CeramicEvent, Product, Review, PlanConfig, UserSession } from '../types';
 
 interface ProfileDetailsProps {
   establishment: Establishment;
   onClose: () => void;
   onAddReview: (establishmentId: string, review: Omit<Review, 'id' | 'date' | 'establishmentId'>) => void;
-  onClaimProfile: (id: string) => void;
+  onClaimProfile: (id: string, details: { name: string; email: string; document: string; phone: string; justification: string; }) => void;
   onTriggerRoute: (coords: [number, number]) => void;
   plans?: PlanConfig[];
+  currentSession?: UserSession | null;
 }
 
 export default function ProfileDetails({ 
@@ -22,7 +23,8 @@ export default function ProfileDetails({
   onAddReview, 
   onClaimProfile,
   onTriggerRoute,
-  plans
+  plans,
+  currentSession
 }: ProfileDetailsProps) {
   const [activeTab, setActiveTab] = useState<'sobre' | 'agenda' | 'produtos' | 'avaliacoes'>('sobre');
 
@@ -128,8 +130,29 @@ export default function ProfileDetails({
     setShowAddReviewModal(false);
   };
 
-  const handleClaimSubmit = () => {
-    onClaimProfile(establishment.id);
+  // Claim Form States
+  const [claimantName, setClaimantName] = useState(currentSession?.name || '');
+  const [claimantEmail, setClaimantEmail] = useState(currentSession?.email || '');
+  const [claimantDocument, setClaimantDocument] = useState(currentSession?.document || '');
+  const [claimantPhone, setClaimantPhone] = useState('');
+  const [claimantJustification, setClaimantJustification] = useState('');
+  const [claimError, setClaimError] = useState('');
+
+  const handleClaimSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setClaimError('');
+    if (!claimantName.trim() || !claimantEmail.trim() || !claimantDocument.trim() || !claimantPhone.trim()) {
+      setClaimError('Por favor, preencha todos os campos obrigatórios.');
+      return;
+    }
+    
+    onClaimProfile(establishment.id, {
+      name: claimantName,
+      email: claimantEmail,
+      document: claimantDocument,
+      phone: claimantPhone,
+      justification: claimantJustification
+    });
     setShowClaimModal(false);
   };
 
@@ -644,55 +667,150 @@ export default function ProfileDetails({
       {/* Modal A: Claim Profile */}
       <AnimatePresence>
         {showClaimModal && (
-          <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm overflow-y-auto">
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl border border-gray-100 p-6 max-w-md w-full shadow-2xl relative"
+              className="bg-white rounded-2xl border border-gray-100 p-6 max-w-lg w-full shadow-2xl relative my-8"
             >
               <button onClick={() => setShowClaimModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 font-bold text-lg cursor-pointer">×</button>
               
-              <div className="text-center space-y-3">
-                <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto border border-emerald-100">
-                  <ShieldCheck className="w-6 h-6 text-emerald-600" />
+              {establishment.ownerId ? (
+                // 1. BLOCKED CASE: Owner ID already exists
+                <div className="space-y-4">
+                  <div className="text-center space-y-3">
+                    <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center mx-auto border border-red-100">
+                      <ShieldCheck className="w-6 h-6 text-red-600" />
+                    </div>
+                    <h3 className="text-lg font-bold text-red-900">Perfil Bloqueado para Reivindicação</h3>
+                    <p className="text-xs text-gray-500 leading-normal">
+                      Este estabelecimento já possui uma propriedade digital vinculada de forma exclusiva e permanente a um <strong>Owner ID</strong> ({establishment.ownerId}).
+                    </p>
+                  </div>
+                  
+                  <div className="p-4 bg-red-50/40 border border-red-100 rounded-xl text-xs text-red-900 leading-relaxed space-y-2">
+                    <p className="font-bold">Por que isto está bloqueado?</p>
+                    <p>
+                      Para evitar fraudes e sequestros de perfis, nenhum usuário recém-criado ou externo pode assumir a identidade de um ateliê que já possui proprietário homologado.
+                    </p>
+                    <p>
+                      Se você é o legítimo proprietário ou precisa de transferência de propriedade, solicite que o atual Proprietário inicie um fluxo de <strong>Transferência de Propriedade</strong> ou contate nosso suporte através do e-mail de homologação.
+                    </p>
+                  </div>
+                  
+                  <button 
+                    onClick={() => setShowClaimModal(false)}
+                    className="w-full py-2 text-xs font-bold rounded-xl bg-gray-900 text-white hover:bg-black transition-all cursor-pointer"
+                  >
+                    Entendido e Fechar
+                  </button>
                 </div>
-                <h3 className="text-lg font-bold text-gray-900">Reivindicar {establishment.name}</h3>
-                <p className="text-xs text-gray-500 leading-normal">
-                  Ao reivindicar o perfil oficial, você assumirá a responsabilidade pela veracidade das informações apresentadas e passará a ter acesso ao Painel de Controle de seu estabelecimento.
-                </p>
-              </div>
+              ) : (
+                // 2. CLAIM FORM CASE: Start Process
+                <form onSubmit={handleClaimSubmit} className="space-y-4 text-xs">
+                  <div className="text-center space-y-2">
+                    <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto border border-emerald-100">
+                      <ShieldCheck className="w-6 h-6 text-emerald-600" />
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-900">Reivindicar Propriedade Digital</h3>
+                    <p className="text-[11px] text-gray-500 leading-normal">
+                      Solicite a veracidade cadastral deste ateliê para gerar seu <strong>Owner ID</strong> permanente e liberar o painel de edição.
+                    </p>
+                  </div>
 
-              <div className="space-y-3 mt-5 text-xs text-gray-700 bg-gray-50 p-3.5 rounded-xl border border-gray-100">
-                <p className="flex gap-2">
-                  <Check className="w-4 h-4 text-emerald-500 shrink-0" />
-                  <span>Edite informações, contatos, horários e fotos de capa gratuitamente.</span>
-                </p>
-                <p className="flex gap-2">
-                  <Check className="w-4 h-4 text-emerald-500 shrink-0" />
-                  <span>Responda às opiniões deixadas por seus clientes.</span>
-                </p>
-                <p className="flex gap-2">
-                  <Check className="w-4 h-4 text-emerald-500 shrink-0" />
-                  <span>Suba para Premium a qualquer momento para turbinar sua vitrine.</span>
-                </p>
-              </div>
+                  {claimError && (
+                    <div className="p-2.5 bg-red-50 text-red-800 rounded-lg text-xs font-semibold">
+                      {claimError}
+                    </div>
+                  )}
 
-              <div className="flex gap-2 mt-6">
-                <button 
-                  onClick={() => setShowClaimModal(false)}
-                  className="flex-1 py-2 text-xs font-semibold rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  id="btn-confirm-claim"
-                  onClick={handleClaimSubmit}
-                  className="flex-1 py-2 text-xs font-semibold rounded-xl bg-terracotta text-white hover:bg-sienna cursor-pointer"
-                >
-                  Confirmar Reivindicação
-                </button>
-              </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-gray-600 font-semibold mb-1">Nome do Proprietário/Responsável *</label>
+                      <input 
+                        type="text" 
+                        required 
+                        value={claimantName}
+                        onChange={(e) => setClaimantName(e.target.value)}
+                        className="w-full p-2 rounded-lg border border-gray-200 focus:outline-none focus:border-terracotta"
+                        placeholder="Ex: Clara Silva"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-gray-600 font-semibold mb-1">E-mail de Contato Comercial *</label>
+                      <input 
+                        type="email" 
+                        required 
+                        value={claimantEmail}
+                        onChange={(e) => setClaimantEmail(e.target.value)}
+                        className="w-full p-2 rounded-lg border border-gray-200 focus:outline-none focus:border-terracotta"
+                        placeholder="clara@exemplo.com"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-gray-600 font-semibold mb-1">CPF ou CNPJ de Validação *</label>
+                      <input 
+                        type="text" 
+                        required 
+                        value={claimantDocument}
+                        onChange={(e) => setClaimantDocument(e.target.value)}
+                        className="w-full p-2 rounded-lg border border-gray-200 focus:outline-none focus:border-terracotta"
+                        placeholder="Ex: 123.456.789-00 ou CNPJ"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-gray-600 font-semibold mb-1">Telefone/WhatsApp Principal *</label>
+                      <input 
+                        type="tel" 
+                        required 
+                        value={claimantPhone}
+                        onChange={(e) => setClaimantPhone(e.target.value)}
+                        className="w-full p-2 rounded-lg border border-gray-200 focus:outline-none focus:border-terracotta"
+                        placeholder="Ex: (11) 99999-9999"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-gray-600 font-semibold mb-1">Justificativa ou Link de Comprovação (opcional)</label>
+                    <textarea 
+                      rows={2}
+                      value={claimantJustification}
+                      onChange={(e) => setClaimantJustification(e.target.value)}
+                      className="w-full p-2 rounded-lg border border-gray-200 focus:outline-none focus:border-terracotta"
+                      placeholder="Ex: Sou o professor fundador desde 2021, link do nosso site oficial..."
+                    />
+                  </div>
+
+                  <div className="p-3 bg-gray-50 border border-gray-150 rounded-xl space-y-1.5 leading-normal text-[11px] text-gray-600">
+                    <p className="font-bold text-gray-800">🔒 Segurança de Homologação</p>
+                    <p>
+                      Sua solicitação entrará em estado de <strong>Cadastro em Análise</strong>. A coordenação do CeraMapa auditará a documentação antes de aprovar e vincular seu Owner ID definitivo.
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <button 
+                      type="button"
+                      onClick={() => setShowClaimModal(false)}
+                      className="flex-1 py-2 text-xs font-semibold rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                    <button 
+                      id="btn-confirm-claim"
+                      type="submit"
+                      className="flex-1 py-2 text-xs font-bold rounded-xl bg-terracotta text-white hover:bg-sienna cursor-pointer"
+                    >
+                      Solicitar Reivindicação
+                    </button>
+                  </div>
+                </form>
+              )}
             </motion.div>
           </div>
         )}

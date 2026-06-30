@@ -7,7 +7,7 @@ import {
 
 import { 
   Establishment, SyncRow, SyncLog, Review, Category, Specialty, PrivacyLevel, CeramicEvent, Product, PlanConfig, SuggestedSpace, PlanTier, IntegrationConfig,
-  UserSession, AuditLog, TeamMember, HomologationStatus, ValidationStepStatus, HomologationChecklist, EstablishmentWithHomologation, UserRole
+  UserSession, AuditLog, TeamMember, HomologationStatus, ValidationStepStatus, HomologationChecklist, EstablishmentWithHomologation, UserRole, EstablishmentTeamMember, EstablishmentRole
 } from './types';
 import { 
   INITIAL_ESTABLISHMENTS, MOCK_SHEETS_DATA, INITIAL_SYNC_LOGS, DEFAULT_PLANS, INITIAL_SUGGESTED_SPACES, DEFAULT_INTEGRATION_CONFIG
@@ -526,20 +526,47 @@ export default function App() {
     );
   };
 
-  // 2. Claim Profile handler
-  const handleClaimProfile = (id: string) => {
+  // 2. Claim Profile handler with secure claimant details
+  const handleClaimProfile = (
+    id: string, 
+    claimantDetails: {
+      name: string;
+      email: string;
+      document: string;
+      phone: string;
+      justification: string;
+    }
+  ) => {
     setEstablishments((prev) =>
       prev.map((est) => {
         if (est.id === id) {
-          return { ...est, claimed: true, ownerId: 'currentUser' };
+          // If already claimed and has an Owner ID, block it (this shouldn't happen from the UI but good for safety)
+          if (est.ownerId && est.ownerId !== 'currentUser') {
+            return est;
+          }
+          return { 
+            ...est, 
+            claimed: true, 
+            homologationStatus: 'Cadastro em Análise',
+            claimantEmail: claimantDetails.email,
+            claimantName: claimantDetails.name,
+            claimantDocument: claimantDetails.document,
+            claimantPhone: claimantDetails.phone,
+            claimantJustification: claimantDetails.justification
+          } as EstablishmentWithHomologation;
         }
         return est;
       })
     );
+    handleAddAuditLog(
+      'Reivindicação Iniciada',
+      `O usuário ${claimantDetails.name} (${claimantDetails.email}) iniciou o processo de reivindicação para o estabelecimento. Documento: ${claimantDetails.document}.`,
+      id
+    );
   };
 
   // 3. Update profile details handler
-  const handleUpdateEstablishment = (id: string, updates: Partial<Establishment>) => {
+  const handleUpdateEstablishment = (id: string, updates: Partial<EstablishmentWithHomologation>) => {
     setEstablishments((prev) =>
       prev.map((est) => {
         if (est.id === id) {
@@ -748,11 +775,80 @@ export default function App() {
 
   // 11. ADMIN BACK-OFFICE: Claims audit & upgrades
   const handleApproveClaim = (estId: string) => {
-    setEstablishments(prev => prev.map(e => e.id === estId ? { ...e, claimed: true, isPremium: true, planTier: e.planTier === 'gratuito' ? 'atelie' : (e.planTier || 'atelie') } : e));
+    // Find claimant details before we update state
+    let targetEmail = 'samirarabello.backup@gmail.com';
+    let targetName = 'Samira Rabello';
+    const originalEst = establishments.find(e => e.id === estId);
+    if (originalEst) {
+      const estWithH = originalEst as EstablishmentWithHomologation;
+      if (estWithH.claimantEmail) {
+        targetEmail = estWithH.claimantEmail;
+        targetName = estWithH.claimantName || 'Responsável';
+      }
+    }
+
+    const generatedOwnerId = 'owner_' + Math.floor(100000 + Math.random() * 900000);
+    const initialTeam: EstablishmentTeamMember[] = [
+      {
+        id: 'tm_' + Math.floor(100000 + Math.random() * 900000),
+        establishmentId: estId,
+        email: targetEmail,
+        name: targetName,
+        role: 'proprietario',
+        status: 'active',
+        permissions: ['all'],
+        addedBy: 'Sistema (Homologação)',
+        addedAt: new Date().toISOString().replace('T', ' ').substring(0, 19)
+      }
+    ];
+
+    setEstablishments(prev => prev.map(e => {
+      if (e.id === estId) {
+        return { 
+          ...e, 
+          claimed: true, 
+          isPremium: true, 
+          planTier: e.planTier === 'gratuito' ? 'atelie' : (e.planTier || 'atelie'),
+          homologationStatus: 'Perfil Oficial',
+          ownerId: generatedOwnerId,
+          ownerEmail: targetEmail,
+          team: initialTeam,
+          ownershipHistory: [
+            `Propriedade digital homologada e vinculada a ${targetName} (${targetEmail}) sob Owner ID: ${generatedOwnerId} em ${new Date().toISOString().replace('T', ' ').substring(0, 19)}.`
+          ]
+        } as EstablishmentWithHomologation;
+      }
+      return e;
+    }));
+
+    handleAddAuditLog(
+      'Propriedade Digital Homologada',
+      `Reivindicação de titularidade aprovada para o espaço. Proprietário oficial: ${targetName} (${targetEmail}). Owner ID: ${generatedOwnerId} vinculado de forma permanente.`,
+      estId,
+      originalEst?.name
+    );
   };
 
   const handleRejectClaim = (estId: string) => {
-    setEstablishments(prev => prev.map(e => e.id === estId ? { ...e, claimed: false } : e));
+    const originalEst = establishments.find(e => e.id === estId);
+    setEstablishments(prev => prev.map(e => {
+      if (e.id === estId) {
+        const { claimantEmail, claimantName, claimantDocument, claimantPhone, claimantJustification, ...rest } = e as any;
+        return { 
+          ...rest, 
+          claimed: false, 
+          homologationStatus: 'Rejeitado' 
+        } as EstablishmentWithHomologation;
+      }
+      return e;
+    }));
+
+    handleAddAuditLog(
+      'Reivindicação Rejeitada',
+      `A solicitação de propriedade digital para o estabelecimento foi recusada pela moderação por inconsistência cadastral.`,
+      estId,
+      originalEst?.name
+    );
   };
 
   const handleTogglePremium = (estId: string) => {
@@ -1119,7 +1215,7 @@ export default function App() {
                     }
                   }}
                   onClaimProfile={() => {
-                    handleClaimProfile(selectedEstablishment.id);
+                    setIsProfileDrawerOpen(true);
                   }}
                   plans={plans}
                 />
@@ -1139,6 +1235,7 @@ export default function App() {
                   onClaimProfile={handleClaimProfile}
                   onTriggerRoute={handleTriggerRoute}
                   plans={plans}
+                  currentSession={currentSession}
                 />
               </div>
             )}
@@ -1192,6 +1289,8 @@ export default function App() {
                  onUpgradeToPremium={handleUpgradeToPremium}
                  onAddEventToEstablishment={handleAddEventToEstablishment}
                  onAddProductToEstablishment={handleAddProductToEstablishment}
+                 currentSession={currentSession}
+                 onAddAuditLog={handleAddAuditLog}
                />
              ) : (
                <div className="bg-white rounded-2xl border border-clay-border p-8 text-center max-w-md mx-auto my-12 shadow-sm">
