@@ -3,12 +3,13 @@ import {
   Award, ShieldCheck, FileText, Check, X, Sparkles, Plus, Trash, Edit, DollarSign,
   TrendingUp, Calendar, Layers, Eye, Users, Search, HelpCircle, FileDown, Briefcase
 } from 'lucide-react';
-import { BenefitProgram, BenefitConcession, BenefitAuditLog, Establishment, PlanTier } from '../types';
+import { BenefitProgram, BenefitConcession, BenefitAuditLog, Establishment, PlanTier, UserSession } from '../types';
 
 interface BenefitsModuleProps {
   establishments: Establishment[];
   onUpdateEstablishmentPlan: (estId: string, plan: PlanTier) => void;
   onUpdateEstablishment: (estId: string, updates: Partial<Establishment>) => void;
+  currentSession?: UserSession | null;
 }
 
 // Initial Mock Programs
@@ -123,7 +124,8 @@ const INITIAL_AUDITS: BenefitAuditLog[] = [
 export default function BenefitsModule({
   establishments,
   onUpdateEstablishmentPlan,
-  onUpdateEstablishment
+  onUpdateEstablishment,
+  currentSession
 }: BenefitsModuleProps) {
   const [programs, setPrograms] = useState<BenefitProgram[]>(() => {
     const saved = localStorage.getItem('ceramapa_benefit_programs');
@@ -203,7 +205,7 @@ export default function BenefitsModule({
     // Audit log
     const nextLog: BenefitAuditLog = {
       id: `aud_${Date.now()}`,
-      adminEmail: 'samirarabello.backup@gmail.com',
+      adminEmail: currentSession?.email || 'samirarabello.backup@gmail.com',
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
       programName: newName,
       action: 'Criação de Programa',
@@ -258,7 +260,7 @@ export default function BenefitsModule({
     // Audit log
     const nextLog: BenefitAuditLog = {
       id: `aud_${Date.now()}`,
-      adminEmail: 'samirarabello.backup@gmail.com',
+      adminEmail: currentSession?.email || 'samirarabello.backup@gmail.com',
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
       programName: program.name,
       action: 'Aprovação de Concessão',
@@ -284,7 +286,7 @@ export default function BenefitsModule({
     // Audit log
     const nextLog: BenefitAuditLog = {
       id: `aud_${Date.now()}`,
-      adminEmail: 'samirarabello.backup@gmail.com',
+      adminEmail: currentSession?.email || 'samirarabello.backup@gmail.com',
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
       programName: program.name,
       action: 'Recusa de Concessão',

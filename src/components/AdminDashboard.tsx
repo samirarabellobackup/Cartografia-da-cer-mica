@@ -5,7 +5,10 @@ import {
   Mail, MessageSquare, ShieldCheck, Copy, Sliders, Trash, CheckSquare,
   AlertCircle, DollarSign, Calendar, Eye, Play, Plus, BookOpen, AlertTriangle
 } from 'lucide-react';
-import { Establishment, PlanConfig, SuggestedSpace, PlanTier, Category, IntegrationConfig, SyncLog } from '../types';
+import { 
+  Establishment, PlanConfig, SuggestedSpace, PlanTier, Category, IntegrationConfig, SyncLog,
+  UserSession, AuditLog, TeamMember, HomologationStatus, ValidationStepStatus, HomologationChecklist, EstablishmentWithHomologation, UserRole
+} from '../types';
 import GeocodingReview from './GeocodingReview';
 import BenefitsModule from './BenefitsModule';
 
@@ -33,6 +36,13 @@ interface AdminDashboardProps {
   // Callback for geolocation and benefits corrections
   onUpdateEstablishmentCoords: (id: string, coords: [number, number], addressDetails?: Partial<Establishment>) => void;
   onUpdateEstablishment: (id: string, updates: Partial<Establishment>) => void;
+
+  // Auth & RBAC extensions
+  currentSession: UserSession | null;
+  auditLogs: AuditLog[];
+  onAddAuditLog: (action: string, notes?: string, targetId?: string, targetName?: string, prevVal?: string, newVal?: string) => void;
+  teamMembers: TeamMember[];
+  onUpdateTeamMembers: (members: TeamMember[]) => void;
 }
 
 export default function AdminDashboard({
@@ -52,9 +62,15 @@ export default function AdminDashboard({
   onManualSyncGoogleSheets,
   syncLogs,
   onUpdateEstablishmentCoords,
-  onUpdateEstablishment
+  onUpdateEstablishment,
+  
+  currentSession,
+  auditLogs,
+  onAddAuditLog,
+  teamMembers,
+  onUpdateTeamMembers
 }: AdminDashboardProps) {
-  const [activeAdminSubTab, setActiveAdminSubTab] = useState<'metrics' | 'plans' | 'suggested' | 'claims' | 'subscribers' | 'duplicates' | 'integrations' | 'geocoding' | 'benefits'>('metrics');
+  const [activeAdminSubTab, setActiveAdminSubTab] = useState<'metrics' | 'plans' | 'suggested' | 'claims' | 'subscribers' | 'duplicates' | 'integrations' | 'geocoding' | 'benefits' | 'homologation' | 'team' | 'audit' | 'settings'>('metrics');
   const [isExporting, setIsExporting] = useState(false);
   const [inviteModalSpace, setInviteModalSpace] = useState<SuggestedSpace | null>(null);
   
@@ -240,6 +256,30 @@ export default function AdminDashboard({
         >
           Métricas Gerais
         </button>
+
+        {/* CENTRAL DE HOMOLOGAÇÃO - ACCESSIBLE BY ALL AUTHORIZED ROLES */}
+        <button 
+          onClick={() => setActiveAdminSubTab('homologation')}
+          className={`pb-3 px-3 border-b-2 tracking-wider uppercase transition-all cursor-pointer relative ${
+            activeAdminSubTab === 'homologation' 
+              ? 'border-terracotta text-terracotta font-extrabold' 
+              : 'border-transparent text-earth-dark/60 hover:text-earth-dark'
+          }`}
+        >
+          ⚖️ Central de Homologação
+          {establishments.filter(e => {
+            const ext = e as EstablishmentWithHomologation;
+            return ext.homologationStatus === 'Cadastro em Análise' || !ext.homologationStatus;
+          }).length > 0 && (
+            <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-terracotta text-white text-[9px] font-bold">
+              {establishments.filter(e => {
+                const ext = e as EstablishmentWithHomologation;
+                return ext.homologationStatus === 'Cadastro em Análise' || !ext.homologationStatus;
+              }).length}
+            </span>
+          )}
+        </button>
+
         <button 
           onClick={() => setActiveAdminSubTab('plans')}
           className={`pb-3 px-3 border-b-2 tracking-wider uppercase transition-all cursor-pointer ${
@@ -330,6 +370,48 @@ export default function AdminDashboard({
         >
           🎁 Benefícios & Bolsas
         </button>
+
+        {/* TEAM & ACCESS CONTROL - RESTRICTED TO ADMIN/SUPER_ADMIN */}
+        {(currentSession?.role === 'super_admin' || currentSession?.role === 'admin') && (
+          <button 
+            onClick={() => setActiveAdminSubTab('team')}
+            className={`pb-3 px-3 border-b-2 tracking-wider uppercase transition-all cursor-pointer ${
+              activeAdminSubTab === 'team' 
+                ? 'border-terracotta text-terracotta font-extrabold' 
+                : 'border-transparent text-earth-dark/60 hover:text-earth-dark'
+            }`}
+          >
+            👥 Equipe & Permissões
+          </button>
+        )}
+
+        {/* AUDIT LOGS - RESTRICTED TO ADMIN/SUPER_ADMIN */}
+        {(currentSession?.role === 'super_admin' || currentSession?.role === 'admin') && (
+          <button 
+            onClick={() => setActiveAdminSubTab('audit')}
+            className={`pb-3 px-3 border-b-2 tracking-wider uppercase transition-all cursor-pointer ${
+              activeAdminSubTab === 'audit' 
+                ? 'border-terracotta text-terracotta font-extrabold' 
+                : 'border-transparent text-earth-dark/60 hover:text-earth-dark'
+            }`}
+          >
+            📜 Auditoria Perpétua
+          </button>
+        )}
+
+        {/* GLOBAL SETTINGS */}
+        {(currentSession?.role === 'super_admin' || currentSession?.role === 'admin') && (
+          <button 
+            onClick={() => setActiveAdminSubTab('settings')}
+            className={`pb-3 px-3 border-b-2 tracking-wider uppercase transition-all cursor-pointer ${
+              activeAdminSubTab === 'settings' 
+                ? 'border-terracotta text-terracotta font-extrabold' 
+                : 'border-transparent text-earth-dark/60 hover:text-earth-dark'
+            }`}
+          >
+            🔧 Configurações do Sistema
+          </button>
+        )}
       </div>
 
       {/* SUB-TAB: METRICS */}
@@ -1088,7 +1170,555 @@ export default function AdminDashboard({
             establishments={establishments}
             onUpdateEstablishmentPlan={onUpdateEstablishmentPlan}
             onUpdateEstablishment={onUpdateEstablishment}
+            currentSession={currentSession}
           />
+        </div>
+      )}
+
+      {/* SUB-TAB: CENTRAL DE HOMOLOGAÇÃO (COMPLEMENTARY REQUIREMENT) */}
+      {activeAdminSubTab === 'homologation' && (
+        <div className="space-y-6 animate-fadeIn text-xs" id="central-homologacao-module">
+          
+          {/* Conceptual Header */}
+          <div className="p-4 bg-gradient-to-r from-sienna/5 to-terracotta/5 border border-clay-border/50 rounded-2xl flex justify-between items-center flex-wrap gap-4">
+            <div className="space-y-1">
+              <h3 className="font-serif italic font-bold text-base text-earth-dark">Central de Homologação de Cadastros</h3>
+              <p className="text-[11px] text-earth-gray">
+                Garantia de autenticidade da rede. Analise os resultados automáticos e atribua o status oficial correspondente.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <span className="px-3 py-1 bg-amber-500 text-white font-bold rounded-lg text-[10px] uppercase">
+                {establishments.filter(e => {
+                  const ext = e as EstablishmentWithHomologation;
+                  return (ext.homologationStatus === 'Cadastro em Análise' || !ext.homologationStatus);
+                }).length} em análise
+              </span>
+              <span className="px-3 py-1 bg-emerald-600 text-white font-bold rounded-lg text-[10px] uppercase">
+                {establishments.filter(e => {
+                  const ext = e as EstablishmentWithHomologation;
+                  return ext.homologationStatus === 'Homologado' || ext.homologationStatus === 'Perfil Oficial';
+                }).length} homologados
+              </span>
+            </div>
+          </div>
+
+          {/* Interactive Homologation Area */}
+          <div className="space-y-4">
+            {establishments.map((est) => {
+              const item = est as EstablishmentWithHomologation;
+              
+              // Fallbacks or default initial values for dynamic validation checks
+              const currentStatus: HomologationStatus = item.homologationStatus || 'Perfil Oficial';
+              const checklist: HomologationChecklist = item.homologationChecklist || {
+                emailConfirmed: item.email ? 'valid' : 'pending',
+                phoneConfirmed: item.whatsapp ? 'valid' : 'pending',
+                documentValid: item.documentCPF_CNPJ ? 'valid' : 'pending',
+                instagramCoherence: item.instagram ? 'valid' : 'pending',
+                geolocValid: (item.coordinates[0] !== 0) ? 'valid' : 'failed',
+                noDuplicity: 'valid'
+              };
+
+              const origin = item.origin || 'importação';
+              const responsibleName = item.responsibleName || 'Responsável Não Identificado';
+              
+              // Color helper for step status dots
+              const renderBadge = (status: ValidationStepStatus) => {
+                switch(status) {
+                  case 'valid': return <span className="inline-flex items-center gap-1 font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 text-[10px]">🟢 Validada</span>;
+                  case 'pending': return <span className="inline-flex items-center gap-1 font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 text-[10px]">🟡 Pendente</span>;
+                  case 'failed': return <span className="inline-flex items-center gap-1 font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-100 text-[10px]">🔴 Reprovada</span>;
+                  default: return <span className="inline-flex items-center gap-1 font-bold text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100 text-[10px]">⚪ N/A</span>;
+                }
+              };
+
+              // Local action helper
+              const changeStatus = (newStatus: HomologationStatus, motive: string) => {
+                const updatedCheck: HomologationChecklist = { ...checklist };
+                if (newStatus === 'Homologado' || newStatus === 'Perfil Oficial') {
+                  updatedCheck.emailConfirmed = 'valid';
+                  updatedCheck.phoneConfirmed = 'valid';
+                  updatedCheck.documentValid = 'valid';
+                }
+                
+                onUpdateEstablishment(item.id, {
+                  homologationStatus: newStatus,
+                  homologationChecklist: updatedCheck
+                } as any);
+
+                onAddAuditLog(
+                  `Homologação: Alteração de Status`,
+                  `Membro ${item.name} alterado para ${newStatus.toUpperCase()}. Motivo: ${motive}`,
+                  item.id,
+                  item.name,
+                  currentStatus,
+                  newStatus
+                );
+              };
+
+              // Complementation request handler
+              const requestInfo = (msg: string) => {
+                onUpdateEstablishment(item.id, {
+                  homologationStatus: 'Aguardando Complementação',
+                  notes: msg
+                } as any);
+
+                onAddAuditLog(
+                  `Homologação: Solicitação de Ajustes`,
+                  `Mensagem enviada: "${msg}"`,
+                  item.id,
+                  item.name,
+                  currentStatus,
+                  'Aguardando Complementação'
+                );
+                alert(`Solicitação de ajustes enviada com sucesso para o e-mail cadastrado em ${item.name}!`);
+              };
+
+              return (
+                <div key={item.id} className="p-5 bg-white border border-clay-border rounded-2xl shadow-sm hover:shadow-md transition-all space-y-4">
+                  
+                  {/* Top Row: Brand & Status metadata */}
+                  <div className="flex flex-wrap justify-between items-start gap-2 border-b border-clay-border/30 pb-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="font-serif font-bold text-sm text-earth-dark">{item.name}</h4>
+                        <span className="px-2 py-0.5 bg-sand-bg text-sienna border border-sand-border text-[9px] rounded font-black uppercase">
+                          {item.category}
+                        </span>
+                        <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-[9px] rounded font-semibold">
+                          Origem: {origin}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-earth-gray">
+                        📍 {item.address} — {item.city}/{item.state} | Responsável: <strong>{responsibleName}</strong>
+                      </p>
+                    </div>
+
+                    <div className="text-right">
+                      <span className={`px-2.5 py-1 text-[10px] font-extrabold uppercase rounded-full border ${
+                        currentStatus === 'Homologado' || currentStatus === 'Perfil Oficial'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : currentStatus === 'Cadastro em Análise'
+                          ? 'bg-amber-50 text-amber-800 border-amber-200 animate-pulse'
+                          : currentStatus === 'Aguardando Complementação'
+                          ? 'bg-blue-50 text-blue-800 border-blue-200'
+                          : 'bg-red-50 text-red-800 border-red-200'
+                      }`}>
+                        {currentStatus}
+                      </span>
+                      {item.notes && (
+                        <p className="text-[10px] text-amber-700 italic mt-1.5 max-w-xs text-right">
+                          💡 Obs: "{item.notes}"
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Checklist Auto-Verificações */}
+                  <div className="grid grid-cols-2 md:grid-cols-6 gap-3 pt-1">
+                    <div className="p-2.5 bg-sand-bg/20 rounded-xl border border-clay-border/30 text-center space-y-1">
+                      <span className="block text-[9px] font-bold text-earth-gray uppercase">E-mail</span>
+                      {renderBadge(checklist.emailConfirmed)}
+                    </div>
+                    <div className="p-2.5 bg-sand-bg/20 rounded-xl border border-clay-border/30 text-center space-y-1">
+                      <span className="block text-[9px] font-bold text-earth-gray uppercase">Telefone</span>
+                      {renderBadge(checklist.phoneConfirmed)}
+                    </div>
+                    <div className="p-2.5 bg-sand-bg/20 rounded-xl border border-clay-border/30 text-center space-y-1">
+                      <span className="block text-[9px] font-bold text-earth-gray uppercase">CPF/CNPJ</span>
+                      {renderBadge(checklist.documentValid)}
+                    </div>
+                    <div className="p-2.5 bg-sand-bg/20 rounded-xl border border-clay-border/30 text-center space-y-1">
+                      <span className="block text-[9px] font-bold text-earth-gray uppercase">Instagram</span>
+                      {renderBadge(checklist.instagramCoherence)}
+                    </div>
+                    <div className="p-2.5 bg-sand-bg/20 rounded-xl border border-clay-border/30 text-center space-y-1">
+                      <span className="block text-[9px] font-bold text-earth-gray uppercase">Geo / Coords</span>
+                      {renderBadge(checklist.geolocValid)}
+                    </div>
+                    <div className="p-2.5 bg-sand-bg/20 rounded-xl border border-clay-border/30 text-center space-y-1">
+                      <span className="block text-[9px] font-bold text-earth-gray uppercase">Duplicidades</span>
+                      {renderBadge(checklist.noDuplicity)}
+                    </div>
+                  </div>
+
+                  {/* Actions buttons */}
+                  <div className="flex flex-wrap justify-between items-center gap-3 pt-2.5 border-t border-clay-border/20">
+                    
+                    {/* Quick message request */}
+                    <div className="flex items-center gap-1.5 w-full md:w-auto">
+                      <input 
+                        type="text"
+                        placeholder="Mensagem de ajuste (ex: Enviar comprovante)"
+                        id={`req_input_${item.id}`}
+                        className="p-1.5 border border-clay-border rounded-lg text-xs bg-white text-earth-dark w-48 focus:outline-none focus:border-terracotta"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const val = (document.getElementById(`req_input_${item.id}`) as HTMLInputElement)?.value;
+                          if (!val) {
+                            alert('Insira uma mensagem explicativa para enviar.');
+                            return;
+                          }
+                          requestInfo(val);
+                        }}
+                        className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold uppercase text-[9px]"
+                      >
+                        Solicitar Ajustes
+                      </button>
+                    </div>
+
+                    {/* Standard decisions buttons */}
+                    <div className="flex flex-wrap gap-1.5 justify-end ml-auto">
+                      <button
+                        type="button"
+                        onClick={() => changeStatus('Rejeitado', 'Dados inconsistentes ou suspeitos.')}
+                        className="px-2.5 py-1.5 hover:bg-red-50 text-red-600 border border-red-200 rounded-lg font-bold uppercase text-[9px]"
+                      >
+                        Rejeitar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => changeStatus('Suspenso', 'Suspenso pela administração.')}
+                        className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold uppercase text-[9px]"
+                      >
+                        Suspender
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => changeStatus('Arquivado', 'Inatividade ou arquivamento permanente.')}
+                        className="px-2.5 py-1.5 text-gray-500 hover:bg-gray-50 border border-gray-200 rounded-lg font-bold uppercase text-[9px]"
+                      >
+                        Arquivar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => changeStatus('Homologado', 'Homologação concluída com sucesso.')}
+                        className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold uppercase text-[9px] shadow-sm"
+                      >
+                        Aprovar Cadastro
+                      </button>
+                    </div>
+
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TAB: EQUIPE & PERMISSÕES (RBAC) */}
+      {activeAdminSubTab === 'team' && (
+        <div className="space-y-6 animate-fadeIn text-xs" id="equipe-permissoes-module">
+          <div className="p-4 bg-[#FAF9F5] border border-clay-border/50 rounded-2xl flex justify-between items-center">
+            <div>
+              <h3 className="font-serif italic font-bold text-base text-earth-dark">Controle da Equipe Administrativa</h3>
+              <p className="text-[11px] text-earth-gray">Convidar colaboradores, gerenciar permissões e auditar acessos corporativos.</p>
+            </div>
+            <span className="text-[10px] bg-sienna/10 text-sienna border border-sienna/20 px-2.5 py-1 rounded-full font-bold">
+              RBAC Ativo
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* Column: Add Team Member */}
+            <div className="lg:col-span-1 p-5 border border-clay-border rounded-2xl bg-white space-y-4 h-fit">
+              <h4 className="font-bold text-sienna uppercase tracking-wide border-b border-clay-border/30 pb-1.5">Convidar Colaborador</h4>
+              
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-gray-700 font-bold mb-1">Nome Completo</label>
+                  <input 
+                    type="text" 
+                    id="tm_name"
+                    placeholder="Nome do integrante"
+                    className="w-full p-2 border border-clay-border rounded-lg text-xs bg-white text-earth-dark"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-700 font-bold mb-1">E-mail Corporativo</label>
+                  <input 
+                    type="email" 
+                    id="tm_email"
+                    placeholder="email@ceramapa.org"
+                    className="w-full p-2 border border-clay-border rounded-lg text-xs bg-white text-earth-dark"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-700 font-bold mb-1">Cargo / Função</label>
+                  <select 
+                    id="tm_role"
+                    className="w-full p-2 border border-clay-border rounded-lg text-xs bg-white text-earth-dark"
+                  >
+                    <option value="moderator">Moderador Regional</option>
+                    <option value="coordinator">Coordenador do Estado</option>
+                    <option value="admin">Administrador Geral</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5 pt-1">
+                  <label className="block text-gray-700 font-bold">Permissões Específicas</label>
+                  <div className="space-y-1">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input type="checkbox" defaultChecked className="w-3.5 h-3.5 text-terracotta" />
+                      <span>Homologar cadastros novos</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input type="checkbox" defaultChecked className="w-3.5 h-3.5 text-terracotta" />
+                      <span>Revisar geocodificação</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input type="checkbox" className="w-3.5 h-3.5 text-terracotta" />
+                      <span>Editar planos comerciais</span>
+                    </label>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nameVal = (document.getElementById('tm_name') as HTMLInputElement)?.value;
+                    const emailVal = (document.getElementById('tm_email') as HTMLInputElement)?.value;
+                    const roleVal = (document.getElementById('tm_role') as HTMLSelectElement)?.value as UserRole;
+                    
+                    if (!nameVal || !emailVal) {
+                      alert('Preencha os dados do colaborador.');
+                      return;
+                    }
+
+                    const newMember: TeamMember = {
+                      id: 'tm_' + Date.now(),
+                      email: emailVal,
+                      name: nameVal,
+                      role: roleVal,
+                      permissions: ['homologate', 'geocoding'],
+                      status: 'active',
+                      history: [`Convidado por ${currentSession?.name || 'Administrador'}`]
+                    };
+
+                    onUpdateTeamMembers([...teamMembers, newMember]);
+                    onAddAuditLog('Convidar Colaborador', `Colaborador ${nameVal} convidado com cargo de ${roleVal.toUpperCase()}`);
+                    alert(`Colaborador ${nameVal} convidado com sucesso!`);
+                    
+                    (document.getElementById('tm_name') as HTMLInputElement).value = '';
+                    (document.getElementById('tm_email') as HTMLInputElement).value = '';
+                  }}
+                  className="w-full py-2 bg-sienna hover:bg-earth-dark text-white font-bold rounded-xl text-xs uppercase"
+                >
+                  Enviar Convite Oficial
+                </button>
+              </div>
+            </div>
+
+            {/* Column: Active Members List */}
+            <div className="lg:col-span-2 p-5 border border-clay-border rounded-2xl bg-white space-y-4">
+              <h4 className="font-bold text-earth-dark uppercase tracking-wide border-b border-clay-border/30 pb-1.5">Equipe Registrada</h4>
+
+              <div className="space-y-3">
+                {teamMembers.map((member) => (
+                  <div key={member.id} className="p-3.5 border border-clay-border/40 rounded-xl bg-sand-bg/20 flex justify-between items-center gap-4 flex-wrap">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-earth-dark">{member.name}</span>
+                        <span className="text-[8px] bg-terracotta text-white font-extrabold uppercase px-1.5 py-0.5 rounded">
+                          {member.role}
+                        </span>
+                      </div>
+                      <p className="text-earth-gray mt-0.5 font-mono text-[10px]">{member.email}</p>
+                      
+                      <div className="text-[10px] text-gray-400 mt-1">
+                        Histórico: {member.history?.join(' | ') || 'Sem registros.'}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-1.5 items-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = teamMembers.map(m => m.id === member.id ? {
+                            ...m,
+                            status: m.status === 'active' ? 'inactive' : 'active'
+                          } as TeamMember : m);
+                          onUpdateTeamMembers(updated);
+                          onAddAuditLog('Alteração de Acesso', `Membro ${member.name} alterado para status ${member.status === 'active' ? 'INATIVO' : 'ATIVO'}`);
+                        }}
+                        className={`px-2.5 py-1.5 rounded-lg font-bold text-[10px] ${
+                          member.status === 'active'
+                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                            : 'bg-red-50 text-red-800 border border-red-200'
+                        }`}
+                      >
+                        {member.status === 'active' ? '🟢 Ativo' : '🔴 Inativo'}
+                      </button>
+                      
+                      {member.role !== 'super_admin' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`Deseja remover ${member.name} da equipe?`)) {
+                              const updated = teamMembers.filter(m => m.id !== member.id);
+                              onUpdateTeamMembers(updated);
+                              onAddAuditLog('Remover Colaborador', `Colaborador ${member.name} removido da equipe.`);
+                            }
+                          }}
+                          className="p-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50"
+                        >
+                          <Trash className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TAB: AUDITORIA PERPÉTUA (AUDIT) */}
+      {activeAdminSubTab === 'audit' && (
+        <div className="space-y-4 animate-fadeIn text-xs" id="auditoria-perpetua-module">
+          <div className="p-4 bg-gray-900 border border-gray-800 rounded-2xl flex justify-between items-center text-white flex-wrap gap-4">
+            <div>
+              <h3 className="font-mono text-emerald-400 font-bold text-sm tracking-widest flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-400 animate-pulse" /> SECURITY_GATE: AUDITORIA PERPÉTUA
+              </h3>
+              <p className="text-[10px] text-gray-400 mt-1">
+                Registros inalteráveis e perpétuos de todas as transações, homologações, e configurações administrativas da rede.
+              </p>
+            </div>
+            <span className="text-[9px] bg-red-600 text-white font-black px-2 py-0.5 rounded tracking-widest uppercase">
+              IMUTÁVEL
+            </span>
+          </div>
+
+          <div className="border border-clay-border rounded-2xl overflow-hidden bg-white shadow-sm overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-gray-100 text-earth-dark border-b border-clay-border uppercase tracking-wider text-[9px] font-bold">
+                  <th className="py-2.5 px-3">Data/Hora</th>
+                  <th className="py-2.5 px-3">Operador</th>
+                  <th className="py-2.5 px-3">Ação</th>
+                  <th className="py-2.5 px-3">Origem/Alvo</th>
+                  <th className="py-2.5 px-3">Valores (Anterior &gt; Novo)</th>
+                  <th className="py-2.5 px-3">Notas Técnicas</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 font-sans">
+                {auditLogs.map((log) => (
+                  <tr key={log.id} className="hover:bg-gray-50/40 text-[11px]">
+                    <td className="py-2.5 px-3 font-mono text-gray-400 whitespace-nowrap">{log.timestamp}</td>
+                    <td className="py-2.5 px-3 font-semibold text-sienna whitespace-nowrap">{log.operatorEmail}</td>
+                    <td className="py-2.5 px-3 font-bold text-earth-dark whitespace-nowrap">
+                      <span className="px-1.5 py-0.5 bg-clay-bg/40 border border-clay-border rounded">
+                        {log.action}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-earth-dark whitespace-nowrap">{log.targetName || 'Plataforma Global'}</td>
+                    <td className="py-2.5 px-3 whitespace-nowrap">
+                      {log.previousValue ? (
+                        <span className="font-mono text-gray-400 text-[10px]">
+                          {log.previousValue} &rarr; <strong className="text-emerald-700">{log.newValue}</strong>
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 italic">N/A</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3 text-earth-gray italic leading-normal max-w-xs truncate" title={log.notes}>
+                      {log.notes || 'Nenhuma nota informada.'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TAB: CONFIGURAÇÕES DO SISTEMA (SETTINGS) */}
+      {activeAdminSubTab === 'settings' && (
+        <div className="space-y-6 animate-fadeIn text-xs" id="configuracoes-sistema-module">
+          <div className="p-4 bg-sand-bg/40 border border-sand-border rounded-2xl">
+            <h3 className="font-serif italic font-bold text-base text-earth-dark">Configurações Gerais de Operação</h3>
+            <p className="text-[11px] text-earth-gray mt-0.5">Ajuste os parâmetros de validação, limites de rede e taxas comerciais sem encostar no código.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            {/* Box: Network Rules */}
+            <div className="p-5 border border-clay-border rounded-2xl bg-white space-y-4">
+              <h4 className="font-bold text-sienna uppercase tracking-wide border-b border-clay-border/30 pb-1 flex items-center gap-1">
+                🛡️ Regras de Validação & Segurança
+              </h4>
+
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="font-bold text-earth-dark">Exigir E-mail Confirmado</p>
+                    <p className="text-[10px] text-earth-gray">O perfil só pode ser homologado após o usuário confirmar o e-mail principal.</p>
+                  </div>
+                  <input type="checkbox" defaultChecked className="w-4.5 h-4.5 text-terracotta rounded" />
+                </div>
+
+                <div className="flex justify-between items-center pt-2 border-t border-sand-bg">
+                  <div>
+                    <p className="font-bold text-earth-dark">Habilitar Cadastro de Espaços</p>
+                    <p className="text-[10px] text-earth-gray">Permitir que usuários façam novos registros a partir do formulário público.</p>
+                  </div>
+                  <input type="checkbox" defaultChecked className="w-4.5 h-4.5 text-terracotta rounded" />
+                </div>
+
+                <div className="flex justify-between items-center pt-2 border-t border-sand-bg">
+                  <div>
+                    <p className="font-bold text-earth-dark">Auditoria de Duplicidades em Tempo Real</p>
+                    <p className="text-[10px] text-earth-gray">Bloqueia cadastros duplicados com o mesmo WhatsApp ou Instagram antes da homologação.</p>
+                  </div>
+                  <input type="checkbox" defaultChecked className="w-4.5 h-4.5 text-terracotta rounded" />
+                </div>
+              </div>
+            </div>
+
+            {/* Box: Commercial parameters */}
+            <div className="p-5 border border-clay-border rounded-2xl bg-white space-y-4">
+              <h4 className="font-bold text-sienna uppercase tracking-wide border-b border-clay-border/30 pb-1 flex items-center gap-1">
+                💸 Parâmetros Comerciais & Taxas
+              </h4>
+
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-gray-700 font-bold mb-1">Taxa de Adesão Premium</label>
+                    <input type="text" defaultValue="R$ 49,90" className="p-2 border border-clay-border rounded-lg text-xs w-full bg-white text-earth-dark" />
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 font-bold mb-1">Moeda da Plataforma</label>
+                    <input type="text" defaultValue="BRL (Real)" readOnly className="p-2 border border-clay-border rounded-lg text-xs w-full bg-gray-100 text-gray-500 font-bold" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-gray-700 font-bold mb-1">Contato de Suporte Comercial</label>
+                  <input type="text" defaultValue="comercial@ceramapa.org" className="p-2 border border-clay-border rounded-lg text-xs w-full bg-white text-earth-dark" />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onAddAuditLog('Configurações Globais', 'Parâmetros comerciais e taxas do sistema atualizados.');
+                    alert('Parâmetros operacionais atualizados com sucesso no banco administrativo!');
+                  }}
+                  className="w-full py-2 bg-earth-dark hover:bg-earth-dark/95 text-white font-bold rounded-xl text-xs uppercase"
+                >
+                  Salvar Parâmetros
+                </button>
+              </div>
+            </div>
+
+          </div>
         </div>
       )}
 

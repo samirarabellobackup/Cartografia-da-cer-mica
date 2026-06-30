@@ -256,4 +256,78 @@ export interface GeocodingReviewItem {
   errorReason: 'out_of_bounds' | 'wrong_state' | 'ocean' | 'no_coords' | 'divergent_city';
 }
 
+// === NEW SECURITY, RBAC & HOMOLOGATION SYSTEM TYPES ===
+
+export type UserRole = 'visitor' | 'owner' | 'moderator' | 'coordinator' | 'admin' | 'super_admin';
+
+export interface UserSession {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  confirmedEmail: boolean;
+  confirmedPhone: boolean;
+  document?: string; // CPF or CNPJ
+  instagram?: string;
+  establishmentId?: string; // Connected establishment if owner
+}
+
+export type HomologationStatus =
+  | 'Perfil Importado'
+  | 'Cadastro em Análise'
+  | 'Aguardando Complementação'
+  | 'Homologado'
+  | 'Perfil Oficial'
+  | 'Perfil Premium'
+  | 'Perfil Institucional'
+  | 'Suspenso'
+  | 'Arquivado'
+  | 'Rejeitado';
+
+export type ValidationStepStatus = 'valid' | 'pending' | 'failed' | 'not_applicable';
+
+export interface HomologationChecklist {
+  emailConfirmed: ValidationStepStatus;
+  phoneConfirmed: ValidationStepStatus;
+  documentValid: ValidationStepStatus;
+  instagramCoherence: ValidationStepStatus;
+  geolocValid: ValidationStepStatus;
+  noDuplicity: ValidationStepStatus;
+}
+
+export interface TeamMember {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  permissions: string[];
+  status: 'active' | 'inactive';
+  history: string[];
+}
+
+export interface AuditLog {
+  id: string;
+  operatorEmail: string;
+  timestamp: string;
+  action: string;
+  targetId?: string;
+  targetName?: string;
+  previousValue?: string;
+  newValue?: string;
+  notes?: string;
+  ip?: string;
+}
+
+// Add our additional fields to Establishment using an inline union type
+export interface EstablishmentWithHomologation extends Establishment {
+  homologationStatus?: HomologationStatus;
+  homologationChecklist?: HomologationChecklist;
+  responsibleName?: string;
+  origin?: 'Google Forms' | 'aplicativo' | 'importação' | 'outro';
+  notes?: string;
+  instagramAccount?: string;
+  documentCPF_CNPJ?: string;
+}
+
+
 

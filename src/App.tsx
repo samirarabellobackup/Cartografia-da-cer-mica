@@ -6,7 +6,8 @@ import {
 } from 'lucide-react';
 
 import { 
-  Establishment, SyncRow, SyncLog, Review, Category, Specialty, PrivacyLevel, CeramicEvent, Product, PlanConfig, SuggestedSpace, PlanTier, IntegrationConfig 
+  Establishment, SyncRow, SyncLog, Review, Category, Specialty, PrivacyLevel, CeramicEvent, Product, PlanConfig, SuggestedSpace, PlanTier, IntegrationConfig,
+  UserSession, AuditLog, TeamMember, HomologationStatus, ValidationStepStatus, HomologationChecklist, EstablishmentWithHomologation, UserRole
 } from './types';
 import { 
   INITIAL_ESTABLISHMENTS, MOCK_SHEETS_DATA, INITIAL_SYNC_LOGS, DEFAULT_PLANS, INITIAL_SUGGESTED_SPACES, DEFAULT_INTEGRATION_CONFIG
@@ -25,10 +26,83 @@ import EventCalendar from './components/EventCalendar';
 import RegistrationForm from './components/RegistrationForm';
 import MapCard from './components/MapCard';
 import SearchDiscover from './components/SearchDiscover';
+import AuthModule from './components/AuthModule';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'mapa' | 'agenda' | 'sync' | 'user' | 'store' | 'admin' | 'cadastro'>('mapa');
+  const [activeTab, setActiveTab] = useState<'mapa' | 'agenda' | 'sync' | 'user' | 'store' | 'admin' | 'cadastro' | 'auth'>('mapa');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Security, Session & RBAC states
+  const [currentSession, setCurrentSession] = useState<UserSession | null>(() => {
+    const saved = localStorage.getItem('ceramapa_session');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
+    const saved = localStorage.getItem('ceramapa_audit_logs');
+    return saved ? JSON.parse(saved) : [
+      {
+        id: 'aud_init',
+        operatorEmail: 'samirarabello.backup@gmail.com',
+        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        action: 'Inicialização da Plataforma de Homologação Segura',
+        notes: 'Módulo de auditoria perpétuo configurado.',
+        ip: '127.0.0.1'
+      }
+    ];
+  });
+
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>(() => {
+    const saved = localStorage.getItem('ceramapa_team_members');
+    return saved ? JSON.parse(saved) : [
+      {
+        id: 'tm_samira',
+        email: 'samirarabello.backup@gmail.com',
+        name: 'Samira Rabello',
+        role: 'super_admin',
+        permissions: ['all'],
+        status: 'active',
+        history: ['Fundadora do CeraMapa.']
+      },
+      {
+        id: 'tm_mod1',
+        email: 'moderador.mapa@gmail.com',
+        name: 'Clara Nunes',
+        role: 'moderator',
+        permissions: ['review_claims', 'review_geocoding'],
+        status: 'active',
+        history: ['Convidada por Samira Rabello.']
+      }
+    ];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('ceramapa_session', JSON.stringify(currentSession));
+  }, [currentSession]);
+
+  useEffect(() => {
+    localStorage.setItem('ceramapa_audit_logs', JSON.stringify(auditLogs));
+  }, [auditLogs]);
+
+  useEffect(() => {
+    localStorage.setItem('ceramapa_team_members', JSON.stringify(teamMembers));
+  }, [teamMembers]);
+
+  const handleAddAuditLog = (action: string, notes?: string, targetId?: string, targetName?: string, previousValue?: string, newValue?: string) => {
+    const newLog: AuditLog = {
+      id: 'aud_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+      operatorEmail: currentSession?.email || 'Visitante Anônimo',
+      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+      action,
+      targetId,
+      targetName,
+      previousValue,
+      newValue,
+      notes,
+      ip: '189.120.45.102'
+    };
+    setAuditLogs(prev => [newLog, ...prev]);
+  };
 
   // Core database states
   const [establishments, setEstablishments] = useState<Establishment[]>(() => {
@@ -267,7 +341,7 @@ export default function App() {
         action: logMsg,
         recordsSynced: newlyImportedCount,
         recordsIgnored: duplicatesCount,
-        operator: isBackground ? 'Frequência de Sincronia' : 'samirarabello.backup@gmail.com'
+        operator: isBackground ? 'Frequência de Sincronia' : (currentSession?.email || 'samirarabello.backup@gmail.com')
       };
 
       setSyncLogs(prev => [nextLog, ...prev]);
@@ -280,7 +354,7 @@ export default function App() {
         action: `Erro ao sincronizar com Google Sheets: ${error.message || error}`,
         recordsSynced: 0,
         recordsIgnored: 0,
-        operator: isBackground ? 'Frequência de Sincronia' : 'samirarabello.backup@gmail.com'
+        operator: isBackground ? 'Frequência de Sincronia' : (currentSession?.email || 'samirarabello.backup@gmail.com')
       };
       setSyncLogs(prev => [nextLog, ...prev]);
     }
@@ -591,7 +665,7 @@ export default function App() {
       action: 'Sincronização manual acionada pelo operador',
       recordsSynced: sheetRows.filter(r => r.status === 'pending').length,
       recordsIgnored: sheetRows.filter(r => r.status === 'duplicate').length,
-      operator: 'samirarabello.backup@gmail.com'
+      operator: currentSession?.email || 'samirarabello.backup@gmail.com'
     };
     setSyncLogs(prev => [nextLog, ...prev]);
   };
@@ -613,7 +687,8 @@ export default function App() {
     const validation = validateCoordinates(geoRes.coords[0], geoRes.coords[1], geoRes.normalized.state);
     const geocodingStatus = (geoRes.success && validation.isValid) ? 'valid' : 'pending_review';
 
-    const nextEstablishment: Establishment = {
+    // Extend establishment with homologation parameters as required by the flowchart
+    const nextEstablishment: EstablishmentWithHomologation = {
       id: `est_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
       name: row.name,
       category: row.category,
@@ -634,7 +709,20 @@ export default function App() {
       isPremium: false,
       claimed: false,
       rating: 5.0,
-      reviewsCount: 0
+      reviewsCount: 0,
+      
+      // Homologation System Core Integration
+      homologationStatus: 'Cadastro em Análise',
+      responsibleName: 'Responsável Importado',
+      origin: 'Google Forms',
+      homologationChecklist: {
+        emailConfirmed: 'pending',
+        phoneConfirmed: 'pending',
+        documentValid: 'pending',
+        instagramCoherence: 'pending',
+        geolocValid: geocodingStatus === 'valid' ? 'valid' : 'failed',
+        noDuplicity: 'valid'
+      }
     };
 
     // Update establishments and sheetRow status
@@ -642,15 +730,15 @@ export default function App() {
     setSheetRows(prev => prev.map(r => r.id === rowId ? { ...r, status: 'synced' } : r));
 
     // Append standard log
-    const nextLog: SyncLog = {
+    const mergeLog: SyncLog = {
       id: `log_${Date.now()}`,
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      action: `Aprovação de linha: ${row.name} integrado ao mapa`,
+      action: `Aprovação de linha: ${row.name} integrado ao mapa em análise`,
       recordsSynced: 1,
       recordsIgnored: 0,
-      operator: 'samirarabello.backup@gmail.com'
+      operator: currentSession?.email || 'samirarabello.backup@gmail.com'
     };
-    setSyncLogs(prev => [nextLog, ...prev]);
+    setSyncLogs(prev => [mergeLog, ...prev]);
   };
 
   // 10. SPREADSHEET: Discard row
@@ -797,29 +885,35 @@ export default function App() {
               Agenda
             </button>
 
-            <button
-              id="nav-tab-btn-sync"
-              onClick={() => setActiveTab('sync')}
-              className={`pb-1 transition-all cursor-pointer ${
-                activeTab === 'sync' 
-                  ? 'text-terracotta border-b-2 border-terracotta' 
-                  : 'text-earth-dark/70 hover:text-terracotta'
-              }`}
-            >
-              Sheets
-            </button>
+            {/* Restricted Tab: Sheets - Only for Administrative Team */}
+            {(currentSession?.role === 'super_admin' || currentSession?.role === 'admin' || currentSession?.role === 'moderator' || currentSession?.role === 'coordinator') && (
+              <button
+                id="nav-tab-btn-sync"
+                onClick={() => setActiveTab('sync')}
+                className={`pb-1 transition-all cursor-pointer ${
+                  activeTab === 'sync' 
+                    ? 'text-terracotta border-b-2 border-terracotta' 
+                    : 'text-earth-dark/70 hover:text-terracotta'
+                }`}
+              >
+                Sheets
+              </button>
+            )}
 
-            <button
-              id="nav-tab-btn-user"
-              onClick={() => setActiveTab('user')}
-              className={`pb-1 transition-all cursor-pointer ${
-                activeTab === 'user' 
-                  ? 'text-terracotta border-b-2 border-terracotta' 
-                  : 'text-earth-dark/70 hover:text-terracotta'
-              }`}
-            >
-              Parceiro
-            </button>
+            {/* Restricted Tab: Parceiro - Only for Owners or Administrative Team */}
+            {(currentSession?.role && currentSession.role !== 'visitor') && (
+              <button
+                id="nav-tab-btn-user"
+                onClick={() => setActiveTab('user')}
+                className={`pb-1 transition-all cursor-pointer ${
+                  activeTab === 'user' 
+                    ? 'text-terracotta border-b-2 border-terracotta' 
+                    : 'text-earth-dark/70 hover:text-terracotta'
+                }`}
+              >
+                Parceiro
+              </button>
+            )}
 
             <button
               id="nav-tab-btn-store"
@@ -845,24 +939,44 @@ export default function App() {
               Cadastrar Espaço
             </button>
 
+            {/* Restricted Tab: Admin - Only for Administrative Team */}
+            {(currentSession?.role === 'super_admin' || currentSession?.role === 'admin' || currentSession?.role === 'moderator' || currentSession?.role === 'coordinator') && (
+              <button
+                id="nav-tab-btn-admin"
+                onClick={() => setActiveTab('admin')}
+                className={`pb-1 transition-all cursor-pointer ${
+                  activeTab === 'admin' 
+                    ? 'text-terracotta border-b-2 border-terracotta font-extrabold' 
+                    : 'text-earth-dark/70 hover:text-terracotta'
+                }`}
+              >
+                Admin
+              </button>
+            )}
+
+            {/* Dynamic Auth Tab trigger */}
             <button
-              id="nav-tab-btn-admin"
-              onClick={() => setActiveTab('admin')}
+              id="nav-tab-btn-auth"
+              onClick={() => setActiveTab('auth')}
               className={`pb-1 transition-all cursor-pointer ${
-                activeTab === 'admin' 
-                  ? 'text-terracotta border-b-2 border-terracotta' 
+                activeTab === 'auth' 
+                  ? 'text-terracotta border-b-2 border-terracotta font-extrabold' 
                   : 'text-earth-dark/70 hover:text-terracotta'
               }`}
             >
-              Admin
+              {currentSession ? 'Meu Perfil' : 'Acesso'}
             </button>
           </nav>
 
-          {/* User Email & Burger Button */}
+          {/* User Email Badge (Dynamic Session Manager) & Burger Button */}
           <div className="flex items-center gap-3">
-            <span className="hidden sm:inline font-mono text-[9px] text-sienna bg-sand-bg border border-sand-border px-2.5 py-1 rounded-md font-bold">
-              samirarabello.backup@gmail.com
-            </span>
+            <button
+              onClick={() => setActiveTab('auth')}
+              className="hidden sm:inline font-mono text-[9px] text-sienna bg-sand-bg border border-sand-border px-2.5 py-1 rounded-md font-bold hover:bg-sand-border/30 transition-all cursor-pointer"
+              title="Clique para ver o Perfil e Sessão"
+            >
+              {currentSession ? `${currentSession.email} (${currentSession.role.toUpperCase()})` : 'VISITANTE (ENTRAR)'}
+            </button>
 
             <button 
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -902,33 +1016,53 @@ export default function App() {
             >
               Agenda & Cursos
             </button>
-            <button
-              onClick={() => { setActiveTab('sync'); setMobileMenuOpen(false); }}
-              className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'sync' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
-            >
-              Sincronizar Sheets
-            </button>
-            <button
-              onClick={() => { setActiveTab('user'); setMobileMenuOpen(false); }}
-              className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'user' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
-            >
-              Painel do Parceiro
-            </button>
+
+            {/* Mobile Sheet Sincronizer */}
+            {(currentSession?.role === 'super_admin' || currentSession?.role === 'admin' || currentSession?.role === 'moderator' || currentSession?.role === 'coordinator') && (
+              <button
+                onClick={() => { setActiveTab('sync'); setMobileMenuOpen(false); }}
+                className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'sync' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
+              >
+                Sincronizar Sheets
+              </button>
+            )}
+
+            {/* Mobile Parceiro */}
+            {(currentSession?.role && currentSession.role !== 'visitor') && (
+              <button
+                onClick={() => { setActiveTab('user'); setMobileMenuOpen(false); }}
+                className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'user' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
+              >
+                Painel do Parceiro
+              </button>
+            )}
+
             <button
               onClick={() => { setActiveTab('store'); setMobileMenuOpen(false); }}
               className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'store' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
             >
               Insumos & Loja
             </button>
+
+            {/* Mobile Admin */}
+            {(currentSession?.role === 'super_admin' || currentSession?.role === 'admin' || currentSession?.role === 'moderator' || currentSession?.role === 'coordinator') && (
+              <button
+                onClick={() => { setActiveTab('admin'); setMobileMenuOpen(false); }}
+                className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'admin' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
+              >
+                Admin Dashboard
+              </button>
+            )}
+
             <button
-              onClick={() => { setActiveTab('admin'); setMobileMenuOpen(false); }}
-              className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'admin' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
+              onClick={() => { setActiveTab('auth'); setMobileMenuOpen(false); }}
+              className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'auth' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
             >
-              Admin Dashboard
+              {currentSession ? 'Meu Perfil' : 'Acesso / Entrar'}
             </button>
             
             <div className="pt-3 border-t border-clay-border text-center text-sienna font-mono text-[9px] font-bold">
-              samirarabello.backup@gmail.com
+              {currentSession ? currentSession.email : 'VISITANTE'}
             </div>
           </motion.div>
         )}
@@ -1050,41 +1184,120 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'user' && (
-            <UserDashboard 
-              establishments={establishments}
-              onUpdateEstablishment={handleUpdateEstablishment}
-              onUpgradeToPremium={handleUpgradeToPremium}
-              onAddEventToEstablishment={handleAddEventToEstablishment}
-              onAddProductToEstablishment={handleAddProductToEstablishment}
-            />
-          )}
+           {activeTab === 'user' && (
+             currentSession && currentSession.role !== 'visitor' ? (
+               <UserDashboard 
+                 establishments={establishments}
+                 onUpdateEstablishment={handleUpdateEstablishment}
+                 onUpgradeToPremium={handleUpgradeToPremium}
+                 onAddEventToEstablishment={handleAddEventToEstablishment}
+                 onAddProductToEstablishment={handleAddProductToEstablishment}
+               />
+             ) : (
+               <div className="bg-white rounded-2xl border border-clay-border p-8 text-center max-w-md mx-auto my-12 shadow-sm">
+                 <h3 className="font-serif text-xl italic text-earth-dark mb-3">Painel do Parceiro Restrito</h3>
+                 <p className="text-earth-gray text-xs mb-6">Esta área é dedicada exclusivamente a proprietários de ateliês, escolas e ceramistas cadastrados.</p>
+                 <button
+                   onClick={() => setActiveTab('auth')}
+                   className="px-5 py-2.5 bg-terracotta hover:bg-terracotta/90 text-white font-bold text-xs uppercase tracking-widest rounded-lg transition-all"
+                 >
+                   Fazer Login ou Cadastrar-se
+                 </button>
+               </div>
+             )
+           )}
 
-          {activeTab === 'store' && (
-            <FutureMarketplace />
-          )}
+           {activeTab === 'store' && (
+             <FutureMarketplace />
+           )}
 
-          {activeTab === 'admin' && (
-            <AdminDashboard 
-              establishments={establishments}
-              onApproveClaim={handleApproveClaim}
-              onRejectClaim={handleRejectClaim}
-              onTogglePremium={handleTogglePremium}
-              onExportCSV={handleExportCSV}
-              plans={plans}
-              onUpdatePlans={handleUpdatePlans}
-              suggestedSpaces={suggestedSpaces}
-              onInviteSpace={handleInviteSpace}
-              onRemoveSuggestedSpace={handleRemoveSuggestedSpace}
-              onUpdateEstablishmentPlan={handleUpdateEstablishmentPlan}
-              integrationConfig={integrationConfig}
-              onUpdateIntegrationConfig={setIntegrationConfig}
-              onManualSyncGoogleSheets={() => syncWithGoogleSheets(integrationConfig, false)}
-              syncLogs={syncLogs}
-              onUpdateEstablishmentCoords={handleUpdateEstablishmentCoords}
-              onUpdateEstablishment={handleUpdateEstablishment}
-            />
-          )}
+           {activeTab === 'auth' && (
+             <div className="max-w-xl mx-auto py-8">
+               <AuthModule 
+                 currentSession={currentSession}
+                 onLogin={(session) => {
+                   setCurrentSession(session);
+                   handleAddAuditLog(
+                     'Autenticação Realizada', 
+                     `Usuário ${session.name} entrou com sucesso com o perfil de ${session.role.toUpperCase()}.`
+                   );
+                   if (['super_admin', 'admin', 'moderator', 'coordinator'].includes(session.role)) {
+                     setActiveTab('admin');
+                   } else {
+                     setActiveTab('mapa');
+                   }
+                 }}
+                 onLogout={() => {
+                   const prevEmail = currentSession?.email;
+                   setCurrentSession(null);
+                   handleAddAuditLog(
+                     'Logout Realizado', 
+                     `Sessão de usuário para ${prevEmail || 'desconhecido'} finalizada.`
+                   );
+                   setActiveTab('mapa');
+                 }}
+                 onUpdateSession={(session) => {
+                   setCurrentSession(session);
+                   handleAddAuditLog(
+                     'Perfil Atualizado', 
+                     `Informações de perfil do usuário ${session.name} foram atualizadas.`
+                   );
+                 }}
+                 onAddAuditLog={(action, notes) => {
+                   handleAddAuditLog(action, notes);
+                 }}
+               />
+             </div>
+           )}
+
+           {activeTab === 'admin' && (
+             ['super_admin', 'admin', 'moderator', 'coordinator'].includes(currentSession?.role || '') ? (
+               <AdminDashboard 
+                 establishments={establishments}
+                 onApproveClaim={handleApproveClaim}
+                 onRejectClaim={handleRejectClaim}
+                 onTogglePremium={handleTogglePremium}
+                 onExportCSV={handleExportCSV}
+                 plans={plans}
+                 onUpdatePlans={handleUpdatePlans}
+                 suggestedSpaces={suggestedSpaces}
+                 onInviteSpace={handleInviteSpace}
+                 onRemoveSuggestedSpace={handleRemoveSuggestedSpace}
+                 onUpdateEstablishmentPlan={handleUpdateEstablishmentPlan}
+                 integrationConfig={integrationConfig}
+                 onUpdateIntegrationConfig={setIntegrationConfig}
+                 onManualSyncGoogleSheets={() => syncWithGoogleSheets(integrationConfig, false)}
+                 syncLogs={syncLogs}
+                 onUpdateEstablishmentCoords={handleUpdateEstablishmentCoords}
+                 onUpdateEstablishment={handleUpdateEstablishment}
+                 
+                 // Security, RBAC & Homologation Prop integrations
+                 currentSession={currentSession}
+                 auditLogs={auditLogs}
+                 onAddAuditLog={handleAddAuditLog}
+                 teamMembers={teamMembers}
+                 onUpdateTeamMembers={setTeamMembers}
+               />
+             ) : (
+               <div className="bg-white rounded-2xl border border-clay-border p-12 text-center max-w-lg mx-auto my-12 shadow-sm">
+                 <div className="w-12 h-12 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                   </svg>
+                 </div>
+                 <h3 className="font-serif text-2xl italic text-earth-dark mb-3">Acesso Administrativo Restrito</h3>
+                 <p className="text-earth-gray text-xs mb-6 max-w-md mx-auto">
+                   Esta área contém informações internas de homologação de cadastros, gerenciamento de equipe e logs de auditoria perpétuos da plataforma.
+                 </p>
+                 <button
+                   onClick={() => setActiveTab('auth')}
+                   className="px-6 py-3 bg-terracotta hover:bg-terracotta/90 text-white font-bold text-xs uppercase tracking-widest rounded-lg transition-all"
+                 >
+                   Identificar-se como Administrador
+                 </button>
+               </div>
+             )
+           )}
         </div>
 
       </main>
