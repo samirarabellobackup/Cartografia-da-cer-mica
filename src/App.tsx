@@ -1092,7 +1092,7 @@ export default function App() {
             </div>
 
             {/* Interactive Leaflet Map: 5 or 8 cols depending on detail drawer status */}
-            <div className={`lg:col-span-${(selectedId && isProfileDrawerOpen) ? '5' : '8'} h-[400px] lg:h-full relative overflow-hidden rounded-2xl border border-clay-border shadow-inner`}>
+            <div className={`h-[400px] lg:h-full relative overflow-hidden rounded-2xl border border-clay-border shadow-inner ${(selectedId && isProfileDrawerOpen) ? 'lg:col-span-5' : 'lg:col-span-8'}`}>
               <MapComponent 
                 establishments={filteredEstablishments} 
                 selectedId={selectedId}
