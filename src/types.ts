@@ -258,7 +258,7 @@ export interface GeocodingReviewItem {
 
 // === NEW SECURITY, RBAC & HOMOLOGATION SYSTEM TYPES ===
 
-export type UserRole = 'visitor' | 'owner' | 'moderator' | 'coordinator' | 'admin' | 'super_admin';
+export type UserRole = 'visitor' | 'owner' | 'moderator' | 'editor' | 'coordinator' | 'admin' | 'super_admin';
 
 export interface UserSession {
   id: string;
@@ -274,15 +274,20 @@ export interface UserSession {
 
 export type HomologationStatus =
   | 'Perfil Importado'
+  | 'Perfil Não Verificado'
+  | 'Perfil em Verificação'
+  | 'Perfil Oficial Verificado'
+  | 'Perfil Premium'
+  | 'Perfil Institucional'
+  | 'Perfil Suspenso'
+  | 'Perfil Arquivado'
   | 'Cadastro em Análise'
   | 'Aguardando Complementação'
   | 'Homologado'
+  | 'Rejeitado'
   | 'Perfil Oficial'
-  | 'Perfil Premium'
-  | 'Perfil Institucional'
   | 'Suspenso'
-  | 'Arquivado'
-  | 'Rejeitado';
+  | 'Arquivado';
 
 export type ValidationStepStatus = 'valid' | 'pending' | 'failed' | 'not_applicable';
 

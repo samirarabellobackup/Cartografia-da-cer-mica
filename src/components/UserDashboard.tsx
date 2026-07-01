@@ -390,7 +390,7 @@ export default function UserDashboard({
   };
 
   // Action: Ownership Transfer (Step-by-step with secure MFA simulation)
-  const handleTransferSubmit = (e: React.FormEvent) => {
+  const handleTransferSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setTransferError('');
     setTransferSuccess('');
@@ -416,76 +416,73 @@ export default function UserDashboard({
 
     // Step 1: MFA check simulation
     if (!showMfaStep) {
-      // Show MFA simulation verification
-      setShowMfaStep(true);
+      try {
+        const res = await fetch(`/api/establishments/${currentEst.id}/transfer-ownership`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-session': JSON.stringify(currentSession)
+          },
+          body: JSON.stringify({
+            newOwnerEmail: transferEmail.trim().toLowerCase(),
+            password: transferPassword,
+            step: 'initiate'
+          })
+        });
+        if (!res.ok) {
+          const errData = await res.json();
+          setTransferError(errData.error || 'Erro ao iniciar transferência.');
+          return;
+        }
+        const data = await res.json();
+        if (data.step === 'mfa_required') {
+          setShowMfaStep(true);
+        }
+      } catch (err) {
+        setTransferError('Erro ao conectar com o servidor.');
+      }
       return;
     }
 
     // Step 2: Code confirmation
-    if (mfaCode !== '123456') {
-      setTransferError('Código de verificação MFA inválido. Use o simulador de token (digite 123456).');
-      return;
-    }
-
-    // Success! Perform ownership transfer
-    const originalOwnerName = currentSession?.name || 'Antigo Proprietário';
-    const originalOwnerEmail = currentEst.ownerEmail || 'antigo@exemplo.com';
-    const generatedOwnerId = 'owner_' + Math.floor(100000 + Math.random() * 900000);
-    const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-
-    const historyLine = `Propriedade digital transferida de ${originalOwnerName} (${originalOwnerEmail}) para ${transferEmail} sob novo Owner ID: ${generatedOwnerId} em ${timestamp}.`;
-    const newHistory = [...(currentEst.ownershipHistory || []), historyLine];
-
-    // Re-initialize the team with the new Proprietário, and demote the old proprietor to Administrador so they don't get completely locked out immediately
-    const currentTeam = currentEst.team || [];
-    const updatedTeam = currentTeam.map(m => {
-      if (m.role === 'proprietario') {
-        return { ...m, role: 'administrador', name: `${m.name} (Ex-Proprietário)` } as EstablishmentTeamMember;
+    try {
+      const res = await fetch(`/api/establishments/${currentEst.id}/transfer-ownership`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-session': JSON.stringify(currentSession)
+        },
+        body: JSON.stringify({
+          newOwnerEmail: transferEmail.trim().toLowerCase(),
+          password: transferPassword,
+          mfaCode: mfaCode,
+          step: 'confirm'
+        })
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        setTransferError(errData.error || 'Código de verificação MFA inválido.');
+        return;
       }
-      return m;
-    });
+      const data = await res.json();
+      if (data.success) {
+        setTransferSuccess('Sucesso! Propriedade digital transferida. Um novo Owner ID foi gerado de forma permanente.');
+        
+        // Notify parent
+        onUpdateEstablishment(currentEst.id, data.establishment);
 
-    // Add new proprietor to team
-    const newProprietorMember: EstablishmentTeamMember = {
-      id: 'tm_' + Math.floor(100000 + Math.random() * 900000),
-      establishmentId: currentEst.id,
-      email: transferEmail.trim().toLowerCase(),
-      name: 'Novo Proprietário',
-      role: 'proprietario',
-      status: 'active',
-      permissions: ['all'],
-      addedBy: 'Transferência de Titularidade (MFA)',
-      addedAt: timestamp
-    };
-
-    updatedTeam.push(newProprietorMember);
-
-    onUpdateEstablishment(currentEst.id, {
-      ownerId: generatedOwnerId,
-      ownerEmail: transferEmail.trim().toLowerCase(),
-      ownershipHistory: newHistory,
-      team: updatedTeam
-    });
-
-    setTransferSuccess('Sucesso! Propriedade digital transferida. Um novo Owner ID foi gerado de forma permanente.');
-    
-    if (onAddAuditLog) {
-      onAddAuditLog(
-        'Transferência de Propriedade Homologada',
-        `Titularidade transferida de ${originalOwnerEmail} para ${transferEmail}. Novo Owner ID: ${generatedOwnerId} gerado de forma irreversível.`,
-        currentEst.id,
-        currentEst.name
-      );
+        setTimeout(() => {
+          setShowTransferModal(false);
+          setShowMfaStep(false);
+          setTransferEmail('');
+          setTransferPassword('');
+          setMfaCode('');
+          setTransferSuccess('');
+        }, 3000);
+      }
+    } catch (err) {
+      setTransferError('Erro ao conectar com o servidor.');
     }
-
-    setTimeout(() => {
-      setShowTransferModal(false);
-      setShowMfaStep(false);
-      setTransferEmail('');
-      setTransferPassword('');
-      setMfaCode('');
-      setTransferSuccess('');
-    }, 3000);
   };
 
   if (claimedEsts.length === 0) {

@@ -527,7 +527,7 @@ export default function App() {
   };
 
   // 2. Claim Profile handler with secure claimant details
-  const handleClaimProfile = (
+  const handleClaimProfile = async (
     id: string, 
     claimantDetails: {
       name: string;
@@ -537,44 +537,62 @@ export default function App() {
       justification: string;
     }
   ) => {
-    setEstablishments((prev) =>
-      prev.map((est) => {
-        if (est.id === id) {
-          // If already claimed and has an Owner ID, block it (this shouldn't happen from the UI but good for safety)
-          if (est.ownerId && est.ownerId !== 'currentUser') {
-            return est;
-          }
-          return { 
-            ...est, 
-            claimed: true, 
-            homologationStatus: 'Cadastro em Análise',
-            claimantEmail: claimantDetails.email,
-            claimantName: claimantDetails.name,
-            claimantDocument: claimantDetails.document,
-            claimantPhone: claimantDetails.phone,
-            claimantJustification: claimantDetails.justification
-          } as EstablishmentWithHomologation;
-        }
-        return est;
-      })
-    );
-    handleAddAuditLog(
-      'Reivindicação Iniciada',
-      `O usuário ${claimantDetails.name} (${claimantDetails.email}) iniciou o processo de reivindicação para o estabelecimento. Documento: ${claimantDetails.document}.`,
-      id
-    );
+    try {
+      const res = await fetch(`/api/establishments/${id}/claim`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-session': JSON.stringify(currentSession)
+        },
+        body: JSON.stringify(claimantDetails)
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        alert(`Erro: ${errData.error}`);
+        return;
+      }
+      const data = await res.json();
+      if (data.success) {
+        setEstablishments(prev => prev.map(e => e.id === id ? data.establishment : e));
+        handleAddAuditLog(
+          'Reivindicação Iniciada',
+          `O usuário ${claimantDetails.name} (${claimantDetails.email}) iniciou o processo de reivindicação para o estabelecimento. Documento: ${claimantDetails.document}.`,
+          id
+        );
+      }
+    } catch (err) {
+      console.error('Error claiming profile:', err);
+    }
   };
 
   // 3. Update profile details handler
-  const handleUpdateEstablishment = (id: string, updates: Partial<EstablishmentWithHomologation>) => {
-    setEstablishments((prev) =>
-      prev.map((est) => {
-        if (est.id === id) {
-          return { ...est, ...updates };
-        }
-        return est;
-      })
-    );
+  const handleUpdateEstablishment = async (id: string, updates: Partial<EstablishmentWithHomologation>) => {
+    try {
+      const res = await fetch(`/api/establishments/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-session': JSON.stringify(currentSession)
+        },
+        body: JSON.stringify(updates)
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        alert(`❌ Falha de Segurança (Backend): ${errData.error || 'Acesso Negado (403)'}`);
+        // Fetch fresh db to revert any UI mismatch
+        const dbRes = await fetch('/api/db');
+        const dbData = await dbRes.json();
+        if (dbData.establishments) setEstablishments(dbData.establishments);
+        return;
+      }
+      const data = await res.json();
+      if (data.success) {
+        setEstablishments(prev => prev.map(e => e.id === id ? data.establishment : e));
+      }
+    } catch (err) {
+      console.error('Error updating establishment:', err);
+      alert('Erro ao conectar com o servidor para salvar alterações.');
+    }
   };
 
   // 3.5 Geocoding and coordinates update handler
@@ -613,38 +631,53 @@ export default function App() {
   };
 
   // 5. Add custom courses/events
-  const handleAddEventToEstablishment = (estId: string, eventData: Omit<CeramicEvent, 'id' | 'establishmentId'>) => {
-    setEstablishments((prev) =>
-      prev.map((est) => {
-        if (est.id === estId) {
-          const events = est.events || [];
-          const nextEvent: CeramicEvent = {
-            ...eventData,
-            id: `ev_${Date.now()}`,
-            establishmentId: estId
-          };
-          return { ...est, events: [nextEvent, ...events] };
-        }
-        return est;
-      })
-    );
+  const handleAddEventToEstablishment = async (estId: string, eventData: Omit<CeramicEvent, 'id' | 'establishmentId'>) => {
+    try {
+      const res = await fetch(`/api/establishments/${estId}/events`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-session': JSON.stringify(currentSession)
+        },
+        body: JSON.stringify(eventData)
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        alert(`❌ Falha de Segurança (Backend): ${errData.error || 'Acesso Negado'}`);
+        return;
+      }
+      const data = await res.json();
+      if (data.success) {
+        setEstablishments(prev => prev.map(e => e.id === estId ? data.establishment : e));
+      }
+    } catch (err) {
+      console.error('Error adding event:', err);
+    }
   };
 
   // 6. Add custom products to showcase
-  const handleAddProductToEstablishment = (estId: string, productData: Omit<Product, 'id'>) => {
-    setEstablishments((prev) =>
-      prev.map((est) => {
-        if (est.id === estId) {
-          const products = est.products || [];
-          const nextProduct: Product = {
-            ...productData,
-            id: `p_${Date.now()}`
-          };
-          return { ...est, products: [nextProduct, ...products] };
-        }
-        return est;
-      })
-    );
+  const handleAddProductToEstablishment = async (estId: string, productData: Omit<Product, 'id'>) => {
+    try {
+      const res = await fetch(`/api/establishments/${estId}/products`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-session': JSON.stringify(currentSession)
+        },
+        body: JSON.stringify(productData)
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        alert(`❌ Falha de Segurança (Backend): ${errData.error || 'Acesso Negado'}`);
+        return;
+      }
+      const data = await res.json();
+      if (data.success) {
+        setEstablishments(prev => prev.map(e => e.id === estId ? data.establishment : e));
+      }
+    } catch (err) {
+      console.error('Error adding product:', err);
+    }
   };
 
   // 7. SPREADSHEET: Append row from Google Forms
@@ -774,81 +807,62 @@ export default function App() {
   };
 
   // 11. ADMIN BACK-OFFICE: Claims audit & upgrades
-  const handleApproveClaim = (estId: string) => {
-    // Find claimant details before we update state
-    let targetEmail = 'samirarabello.backup@gmail.com';
-    let targetName = 'Samira Rabello';
-    const originalEst = establishments.find(e => e.id === estId);
-    if (originalEst) {
-      const estWithH = originalEst as EstablishmentWithHomologation;
-      if (estWithH.claimantEmail) {
-        targetEmail = estWithH.claimantEmail;
-        targetName = estWithH.claimantName || 'Responsável';
+  const handleApproveClaim = async (estId: string) => {
+    try {
+      const res = await fetch(`/api/establishments/${estId}/approve-claim`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-session': JSON.stringify(currentSession)
+        }
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        alert(`Erro ao aprovar reivindicação: ${errData.error}`);
+        return;
       }
+      const data = await res.json();
+      if (data.success) {
+        setEstablishments(prev => prev.map(e => e.id === estId ? data.establishment : e));
+        handleAddAuditLog(
+          'Propriedade Digital Homologada',
+          `Reivindicação homologada com sucesso. Proprietário: ${data.establishment.claimantName} (${data.establishment.claimantEmail}). Owner ID: ${data.establishment.ownerId} vinculado de forma permanente.`,
+          estId,
+          data.establishment.name
+        );
+      }
+    } catch (err) {
+      console.error('Error approving claim:', err);
     }
-
-    const generatedOwnerId = 'owner_' + Math.floor(100000 + Math.random() * 900000);
-    const initialTeam: EstablishmentTeamMember[] = [
-      {
-        id: 'tm_' + Math.floor(100000 + Math.random() * 900000),
-        establishmentId: estId,
-        email: targetEmail,
-        name: targetName,
-        role: 'proprietario',
-        status: 'active',
-        permissions: ['all'],
-        addedBy: 'Sistema (Homologação)',
-        addedAt: new Date().toISOString().replace('T', ' ').substring(0, 19)
-      }
-    ];
-
-    setEstablishments(prev => prev.map(e => {
-      if (e.id === estId) {
-        return { 
-          ...e, 
-          claimed: true, 
-          isPremium: true, 
-          planTier: e.planTier === 'gratuito' ? 'atelie' : (e.planTier || 'atelie'),
-          homologationStatus: 'Perfil Oficial',
-          ownerId: generatedOwnerId,
-          ownerEmail: targetEmail,
-          team: initialTeam,
-          ownershipHistory: [
-            `Propriedade digital homologada e vinculada a ${targetName} (${targetEmail}) sob Owner ID: ${generatedOwnerId} em ${new Date().toISOString().replace('T', ' ').substring(0, 19)}.`
-          ]
-        } as EstablishmentWithHomologation;
-      }
-      return e;
-    }));
-
-    handleAddAuditLog(
-      'Propriedade Digital Homologada',
-      `Reivindicação de titularidade aprovada para o espaço. Proprietário oficial: ${targetName} (${targetEmail}). Owner ID: ${generatedOwnerId} vinculado de forma permanente.`,
-      estId,
-      originalEst?.name
-    );
   };
 
-  const handleRejectClaim = (estId: string) => {
-    const originalEst = establishments.find(e => e.id === estId);
-    setEstablishments(prev => prev.map(e => {
-      if (e.id === estId) {
-        const { claimantEmail, claimantName, claimantDocument, claimantPhone, claimantJustification, ...rest } = e as any;
-        return { 
-          ...rest, 
-          claimed: false, 
-          homologationStatus: 'Rejeitado' 
-        } as EstablishmentWithHomologation;
+  const handleRejectClaim = async (estId: string) => {
+    try {
+      const res = await fetch(`/api/establishments/${estId}/reject-claim`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-session': JSON.stringify(currentSession)
+        }
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        alert(`Erro ao rejeitar reivindicação: ${errData.error}`);
+        return;
       }
-      return e;
-    }));
-
-    handleAddAuditLog(
-      'Reivindicação Rejeitada',
-      `A solicitação de propriedade digital para o estabelecimento foi recusada pela moderação por inconsistência cadastral.`,
-      estId,
-      originalEst?.name
-    );
+      const data = await res.json();
+      if (data.success) {
+        setEstablishments(prev => prev.map(e => e.id === estId ? data.establishment : e));
+        handleAddAuditLog(
+          'Reivindicação Rejeitada',
+          `A solicitação de propriedade digital para o estabelecimento foi recusada pela moderação por inconsistência cadastral.`,
+          estId,
+          data.establishment.name
+        );
+      }
+    } catch (err) {
+      console.error('Error rejecting claim:', err);
+    }
   };
 
   const handleTogglePremium = (estId: string) => {
