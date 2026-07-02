@@ -35,34 +35,65 @@ export default function App() {
   const [ateliesSearch, setAteliesSearch] = useState('');
   const [fornecedoresSearch, setFornecedoresSearch] = useState('');
 
+  const [showAdminControlBar, setShowAdminControlBar] = useState(false);
+
   // Support URL hash routing for isolated environments!
   useEffect(() => {
-    const handleHashChange = () => {
+    const handleRouteCheck = () => {
       const hash = window.location.hash;
+      const path = window.location.pathname;
+      const search = window.location.search;
+
+      const isMentor = 
+        path === '/mentordaconta' || 
+        path.endsWith('/mentordaconta') || 
+        hash === '#mentordaconta' || 
+        hash.includes('mentordaconta') || 
+        search.includes('mentordaconta');
+
+      setShowAdminControlBar(isMentor);
+
       if (hash === '#atelies') {
         setActiveTab('atelies');
+        setActivePortal('public');
       } else if (hash === '#fornecedores') {
         setActiveTab('fornecedores');
+        setActivePortal('public');
       } else if (hash === '#agenda') {
         setActiveTab('agenda');
+        setActivePortal('public');
       } else if (hash === '#sobre') {
         setActiveTab('sobre');
+        setActivePortal('public');
+      } else if (isMentor) {
+        setActivePortal('admin');
+        setActiveTab('admin');
       } else {
         setActiveTab('mapa');
+        setActivePortal('public');
       }
-      setActivePortal('public');
     };
 
-    window.addEventListener('hashchange', handleHashChange);
-    handleHashChange();
+    window.addEventListener('hashchange', handleRouteCheck);
+    window.addEventListener('popstate', handleRouteCheck);
+    handleRouteCheck();
 
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    return () => {
+      window.removeEventListener('hashchange', handleRouteCheck);
+      window.removeEventListener('popstate', handleRouteCheck);
+    };
   }, []);
 
   const changePortal = (portal: 'public' | 'partner' | 'admin') => {
-    setActivePortal('public');
-    setActiveTab('mapa');
-    window.location.hash = 'mapa';
+    if (!showAdminControlBar) return;
+    setActivePortal(portal);
+    if (portal === 'admin') {
+      setActiveTab('admin');
+    } else if (portal === 'partner') {
+      setActiveTab('user');
+    } else {
+      setActiveTab('mapa');
+    }
   };
 
   // Security, Session & RBAC states
@@ -1029,49 +1060,51 @@ export default function App() {
     <div className="min-h-screen bg-[#FAF9F5] text-earth-dark flex flex-col antialiased font-sans">
       
       {/* 🟢 TOP MULTI-ENVIRONMENT CONTROL BAR - PLATFORM SEPARATION ARCHITECTURE */}
-      <div className="bg-earth-dark text-white text-[10px] font-bold uppercase tracking-wider px-6 py-2.5 flex flex-wrap justify-between items-center gap-3 border-b border-clay-border/30">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span>Arquitetura de Segurança Segregada</span>
+      {showAdminControlBar && (
+        <div className="bg-earth-dark text-white text-[10px] font-bold uppercase tracking-wider px-6 py-2.5 flex flex-wrap justify-between items-center gap-3 border-b border-clay-border/30">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>Arquitetura de Segurança Segregada</span>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <span className="text-earth-gray mr-1">Ambiente Ativo:</span>
+            
+            <button 
+              onClick={() => changePortal('public')}
+              className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+                activePortal === 'public' 
+                  ? 'bg-terracotta text-white shadow-sm' 
+                  : 'bg-white/10 text-white/80 hover:bg-white/20'
+              }`}
+            >
+              1. Portal Público
+            </button>
+            
+            <button 
+              onClick={() => changePortal('partner')}
+              className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+                activePortal === 'partner' 
+                  ? 'bg-[#E07A5F] text-white shadow-sm' 
+                  : 'bg-white/10 text-white/80 hover:bg-white/20'
+              }`}
+            >
+              2. Portal do Parceiro
+            </button>
+            
+            <button 
+              onClick={() => changePortal('admin')}
+              className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+                activePortal === 'admin' 
+                  ? 'bg-red-700 text-white shadow-sm' 
+                  : 'bg-white/10 text-white/80 hover:bg-white/20'
+              }`}
+            >
+              3. Painel Administrativo 🔐
+            </button>
+          </div>
         </div>
-        
-        <div className="flex items-center gap-2">
-          <span className="text-earth-gray mr-1">Ambiente Ativo:</span>
-          
-          <button 
-            onClick={() => changePortal('public')}
-            className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
-              activePortal === 'public' 
-                ? 'bg-terracotta text-white shadow-sm' 
-                : 'bg-white/10 text-white/80 hover:bg-white/20'
-            }`}
-          >
-            1. Portal Público
-          </button>
-          
-          <button 
-            onClick={() => changePortal('partner')}
-            className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
-              activePortal === 'partner' 
-                ? 'bg-[#E07A5F] text-white shadow-sm' 
-                : 'bg-white/10 text-white/80 hover:bg-white/20'
-            }`}
-          >
-            2. Portal do Parceiro
-          </button>
-          
-          <button 
-            onClick={() => changePortal('admin')}
-            className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
-              activePortal === 'admin' 
-                ? 'bg-red-700 text-white shadow-sm' 
-                : 'bg-white/10 text-white/80 hover:bg-white/20'
-            }`}
-          >
-            3. Painel Administrativo 🔐
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* ========================================================= */}
       {/* 1. ENVIRONMENT: PORTAL PÚBLICO                             */}
