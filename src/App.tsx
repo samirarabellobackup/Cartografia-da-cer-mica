@@ -29,8 +29,44 @@ import SearchDiscover from './components/SearchDiscover';
 import AuthModule from './components/AuthModule';
 
 export default function App() {
+  const [activePortal, setActivePortal] = useState<'public' | 'partner' | 'admin'>('public');
   const [activeTab, setActiveTab] = useState<'mapa' | 'agenda' | 'sync' | 'user' | 'store' | 'admin' | 'cadastro' | 'auth'>('mapa');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Support URL hash routing for isolated environments!
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      if (hash === '#admin') {
+        setActivePortal('admin');
+        setActiveTab('admin');
+      } else if (hash === '#parceiro') {
+        setActivePortal('partner');
+        setActiveTab('user');
+      } else {
+        setActivePortal('public');
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    handleHashChange();
+
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const changePortal = (portal: 'public' | 'partner' | 'admin') => {
+    setActivePortal(portal);
+    if (portal === 'admin') {
+      window.location.hash = 'admin';
+      setActiveTab('admin');
+    } else if (portal === 'partner') {
+      window.location.hash = 'parceiro';
+      setActiveTab('user');
+    } else {
+      window.location.hash = 'publico';
+      setActiveTab('mapa');
+    }
+  };
 
   // Security, Session & RBAC states
   const [currentSession, setCurrentSession] = useState<UserSession | null>(() => {
@@ -941,482 +977,525 @@ export default function App() {
   };
 
   const selectedEstablishment = establishments.find(e => e.id === selectedId);
+  const isAdmin = currentSession && currentSession.email.toLowerCase() === 'samirarabello.backup@gmail.com';
 
   return (
-    <div className="min-h-screen bg-sand-bg text-earth-dark flex flex-col antialiased font-sans">
+    <div className="min-h-screen bg-[#FAF9F5] text-earth-dark flex flex-col antialiased font-sans">
       
-      {/* HEADER SECTION (Inspired by Contemporary Art Museums & Natural Clay Tones) */}
-      <header className="bg-white border-b border-clay-border sticky top-0 z-[1000] px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          
-          {/* Brand Logo & Slogan */}
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-terracotta flex items-center justify-center shadow-sm shrink-0">
-              <div className="w-4.5 h-4.5 rounded-sm border-2 border-white transform rotate-12"></div>
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-serif italic font-bold tracking-tight text-earth-dark">
-                  Cartografia da <span className="font-light text-terracotta not-italic">Cerâmica</span>
-                </h1>
-                <span className="text-[8px] uppercase font-bold tracking-widest px-2 py-0.5 bg-terracotta text-white rounded-full font-sans">
-                  Colaborativo
-                </span>
-              </div>
-              <p className="text-[9px] text-earth-gray font-bold uppercase tracking-widest mt-0.5 font-sans">
-                O Guia Digital da Cerâmica Brasileira
-              </p>
-            </div>
-          </div>
-
-          {/* Desktop Navigation */}
-          <nav className="hidden lg:flex items-center gap-7 text-xs font-bold uppercase tracking-widest">
-            <button
-              id="nav-tab-btn-mapa"
-              onClick={() => setActiveTab('mapa')}
-              className={`pb-1 transition-all cursor-pointer ${
-                activeTab === 'mapa' 
-                  ? 'text-terracotta border-b-2 border-terracotta' 
-                  : 'text-earth-dark/70 hover:text-terracotta'
-              }`}
-            >
-              Mapa Nacional
-            </button>
-            
-            <button
-              id="nav-tab-btn-agenda"
-              onClick={() => setActiveTab('agenda')}
-              className={`pb-1 transition-all cursor-pointer ${
-                activeTab === 'agenda' 
-                  ? 'text-terracotta border-b-2 border-terracotta' 
-                  : 'text-earth-dark/70 hover:text-terracotta'
-              }`}
-            >
-              Agenda
-            </button>
-
-            {/* Restricted Tab: Sheets - Only for Administrative Team */}
-            {(currentSession?.role === 'super_admin' || currentSession?.role === 'admin' || currentSession?.role === 'moderator' || currentSession?.role === 'coordinator') && (
-              <button
-                id="nav-tab-btn-sync"
-                onClick={() => setActiveTab('sync')}
-                className={`pb-1 transition-all cursor-pointer ${
-                  activeTab === 'sync' 
-                    ? 'text-terracotta border-b-2 border-terracotta' 
-                    : 'text-earth-dark/70 hover:text-terracotta'
-                }`}
-              >
-                Sheets
-              </button>
-            )}
-
-            {/* Restricted Tab: Parceiro - Only for Owners or Administrative Team */}
-            {(currentSession?.role && currentSession.role !== 'visitor') && (
-              <button
-                id="nav-tab-btn-user"
-                onClick={() => setActiveTab('user')}
-                className={`pb-1 transition-all cursor-pointer ${
-                  activeTab === 'user' 
-                    ? 'text-terracotta border-b-2 border-terracotta' 
-                    : 'text-earth-dark/70 hover:text-terracotta'
-                }`}
-              >
-                Parceiro
-              </button>
-            )}
-
-            <button
-              id="nav-tab-btn-store"
-              onClick={() => setActiveTab('store')}
-              className={`pb-1 transition-all cursor-pointer ${
-                activeTab === 'store' 
-                  ? 'text-terracotta border-b-2 border-terracotta' 
-                  : 'text-earth-dark/70 hover:text-terracotta'
-              }`}
-            >
-              Loja
-            </button>
-
-            <button
-              id="nav-tab-btn-cadastro"
-              onClick={() => setActiveTab('cadastro')}
-              className={`pb-1 transition-all cursor-pointer ${
-                activeTab === 'cadastro' 
-                  ? 'text-terracotta border-b-2 border-terracotta' 
-                  : 'text-earth-dark/70 hover:text-terracotta'
-              }`}
-            >
-              Cadastrar Espaço
-            </button>
-
-            {/* Restricted Tab: Admin - Only for Administrative Team */}
-            {(currentSession?.role === 'super_admin' || currentSession?.role === 'admin' || currentSession?.role === 'moderator' || currentSession?.role === 'coordinator') && (
-              <button
-                id="nav-tab-btn-admin"
-                onClick={() => setActiveTab('admin')}
-                className={`pb-1 transition-all cursor-pointer ${
-                  activeTab === 'admin' 
-                    ? 'text-terracotta border-b-2 border-terracotta font-extrabold' 
-                    : 'text-earth-dark/70 hover:text-terracotta'
-                }`}
-              >
-                Admin
-              </button>
-            )}
-
-            {/* Dynamic Auth Tab trigger */}
-            <button
-              id="nav-tab-btn-auth"
-              onClick={() => setActiveTab('auth')}
-              className={`pb-1 transition-all cursor-pointer ${
-                activeTab === 'auth' 
-                  ? 'text-terracotta border-b-2 border-terracotta font-extrabold' 
-                  : 'text-earth-dark/70 hover:text-terracotta'
-              }`}
-            >
-              {currentSession ? 'Meu Perfil' : 'Acesso'}
-            </button>
-          </nav>
-
-          {/* User Email Badge (Dynamic Session Manager) & Burger Button */}
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setActiveTab('auth')}
-              className="hidden sm:inline font-mono text-[9px] text-sienna bg-sand-bg border border-sand-border px-2.5 py-1 rounded-md font-bold hover:bg-sand-border/30 transition-all cursor-pointer"
-              title="Clique para ver o Perfil e Sessão"
-            >
-              {currentSession ? `${currentSession.email} (${currentSession.role.toUpperCase()})` : 'VISITANTE (ENTRAR)'}
-            </button>
-
-            <button 
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-2 rounded-xl border border-clay-border text-earth-dark hover:bg-sand-bg cursor-pointer transition-all"
-            >
-              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-          </div>
-
+      {/* 🟢 TOP MULTI-ENVIRONMENT CONTROL BAR - PLATFORM SEPARATION ARCHITECTURE */}
+      <div className="bg-earth-dark text-white text-[10px] font-bold uppercase tracking-wider px-6 py-2.5 flex flex-wrap justify-between items-center gap-3 border-b border-clay-border/30">
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span>Arquitetura de Segurança Segregada</span>
         </div>
-      </header>
-
-      {/* MOBILE MENU OVERLAY */}
-      <AnimatePresence>
-        {mobileMenuOpen && (
-          <motion.div 
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="lg:hidden bg-white border-b border-clay-border p-5 space-y-2 z-[999] absolute top-[68px] left-0 w-full shadow-lg text-xs font-bold uppercase tracking-widest"
-          >
-            <button
-              onClick={() => { setActiveTab('mapa'); setMobileMenuOpen(false); }}
-              className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'mapa' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
-            >
-              Mapa Nacional
-            </button>
-            <button
-              onClick={() => { setActiveTab('cadastro'); setMobileMenuOpen(false); }}
-              className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'cadastro' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
-            >
-              Cadastrar meu Espaço
-            </button>
-            <button
-              onClick={() => { setActiveTab('agenda'); setMobileMenuOpen(false); }}
-              className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'agenda' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
-            >
-              Agenda & Cursos
-            </button>
-
-            {/* Mobile Sheet Sincronizer */}
-            {(currentSession?.role === 'super_admin' || currentSession?.role === 'admin' || currentSession?.role === 'moderator' || currentSession?.role === 'coordinator') && (
-              <button
-                onClick={() => { setActiveTab('sync'); setMobileMenuOpen(false); }}
-                className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'sync' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
-              >
-                Sincronizar Sheets
-              </button>
-            )}
-
-            {/* Mobile Parceiro */}
-            {(currentSession?.role && currentSession.role !== 'visitor') && (
-              <button
-                onClick={() => { setActiveTab('user'); setMobileMenuOpen(false); }}
-                className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'user' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
-              >
-                Painel do Parceiro
-              </button>
-            )}
-
-            <button
-              onClick={() => { setActiveTab('store'); setMobileMenuOpen(false); }}
-              className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'store' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
-            >
-              Insumos & Loja
-            </button>
-
-            {/* Mobile Admin */}
-            {(currentSession?.role === 'super_admin' || currentSession?.role === 'admin' || currentSession?.role === 'moderator' || currentSession?.role === 'coordinator') && (
-              <button
-                onClick={() => { setActiveTab('admin'); setMobileMenuOpen(false); }}
-                className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'admin' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
-              >
-                Admin Dashboard
-              </button>
-            )}
-
-            <button
-              onClick={() => { setActiveTab('auth'); setMobileMenuOpen(false); }}
-              className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'auth' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
-            >
-              {currentSession ? 'Meu Perfil' : 'Acesso / Entrar'}
-            </button>
-            
-            <div className="pt-3 border-t border-clay-border text-center text-sienna font-mono text-[9px] font-bold">
-              {currentSession ? currentSession.email : 'VISITANTE'}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* MAIN APPLICATION STAGE */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-5 flex flex-col min-h-0">
         
-        {/* TAB 1: THE CORE NATIONAL MAP WORKFLOW */}
-        {activeTab === 'mapa' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 min-h-[500px] lg:h-[calc(100vh-140px)]">
-            
-            {/* Sidebar Results & Search: 4 cols */}
-            <div className="lg:col-span-4 flex flex-col gap-4 min-h-[400px] lg:h-full overflow-hidden pr-0 lg:pr-1">
-              <SearchDiscover
-                establishments={establishments}
-                onSelectEstablishment={(id) => { setSelectedId(id); setIsProfileDrawerOpen(false); }}
-                selectedId={selectedId}
-                filters={filters}
-                onFilterChange={setFilters}
-                userCoords={userCoords}
-                onToggleUserCoords={handleToggleUserCoords}
-                onCenterMap={(coords) => setCenterCoordinates(coords)}
-                mapClickedCoords={mapClickedCoords}
-                onClearMapClick={() => setMapClickedCoords(null)}
-              />
+        <div className="flex items-center gap-2">
+          <span className="text-earth-gray mr-1">Ambiente Ativo:</span>
+          
+          <button 
+            onClick={() => changePortal('public')}
+            className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+              activePortal === 'public' 
+                ? 'bg-terracotta text-white shadow-sm' 
+                : 'bg-white/10 text-white/80 hover:bg-white/20'
+            }`}
+          >
+            1. Portal Público
+          </button>
+          
+          <button 
+            onClick={() => changePortal('partner')}
+            className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+              activePortal === 'partner' 
+                ? 'bg-[#E07A5F] text-white shadow-sm' 
+                : 'bg-white/10 text-white/80 hover:bg-white/20'
+            }`}
+          >
+            2. Portal do Parceiro
+          </button>
+          
+          <button 
+            onClick={() => changePortal('admin')}
+            className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+              activePortal === 'admin' 
+                ? 'bg-red-700 text-white shadow-sm' 
+                : 'bg-white/10 text-white/80 hover:bg-white/20'
+            }`}
+          >
+            3. Painel Administrativo 🔐
+          </button>
+        </div>
+      </div>
+
+      {/* ========================================================= */}
+      {/* 1. ENVIRONMENT: PORTAL PÚBLICO                             */}
+      {/* ========================================================= */}
+      {activePortal === 'public' && (
+        <>
+          {/* HEADER SECTION (Public Visitor Navigation Only - No administrative tools leaked) */}
+          <header className="bg-white border-b border-clay-border sticky top-0 z-[1000] px-6 py-4">
+            <div className="max-w-7xl mx-auto flex items-center justify-between">
+              
+              {/* Brand Logo */}
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-terracotta flex items-center justify-center shadow-sm shrink-0">
+                  <div className="w-4.5 h-4.5 rounded-sm border-2 border-white transform rotate-12"></div>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-xl font-serif italic font-bold tracking-tight text-earth-dark">
+                      Cartografia da <span className="font-light text-terracotta not-italic">Cerâmica</span>
+                    </h1>
+                    <span className="text-[8px] uppercase font-bold tracking-widest px-2 py-0.5 bg-olive text-white rounded-full font-sans">
+                      Público
+                    </span>
+                  </div>
+                  <p className="text-[9px] text-earth-gray font-bold uppercase tracking-widest mt-0.5 font-sans">
+                    O Guia Nacional Digital da Cerâmica Autoral
+                  </p>
+                </div>
+              </div>
+
+              {/* Desktop Navigation */}
+              <nav className="hidden lg:flex items-center gap-8 text-xs font-bold uppercase tracking-widest">
+                <button
+                  id="nav-tab-btn-mapa"
+                  onClick={() => setActiveTab('mapa')}
+                  className={`pb-1 transition-all cursor-pointer ${
+                    activeTab === 'mapa' 
+                      ? 'text-terracotta border-b-2 border-terracotta' 
+                      : 'text-earth-dark/70 hover:text-terracotta'
+                  }`}
+                >
+                  Mapa Nacional
+                </button>
+                
+                <button
+                  id="nav-tab-btn-agenda"
+                  onClick={() => setActiveTab('agenda')}
+                  className={`pb-1 transition-all cursor-pointer ${
+                    activeTab === 'agenda' 
+                      ? 'text-terracotta border-b-2 border-terracotta' 
+                      : 'text-earth-dark/70 hover:text-terracotta'
+                  }`}
+                >
+                  Agenda & Eventos
+                </button>
+
+                <button
+                  id="nav-tab-btn-store"
+                  onClick={() => setActiveTab('store')}
+                  className={`pb-1 transition-all cursor-pointer ${
+                    activeTab === 'store' 
+                      ? 'text-terracotta border-b-2 border-terracotta' 
+                      : 'text-earth-dark/70 hover:text-terracotta'
+                  }`}
+                >
+                  Insumos & Fornecedores
+                </button>
+
+                <button
+                  id="nav-tab-btn-cadastro"
+                  onClick={() => setActiveTab('cadastro')}
+                  className={`pb-1 transition-all cursor-pointer ${
+                    activeTab === 'cadastro' 
+                      ? 'text-terracotta border-b-2 border-terracotta' 
+                      : 'text-earth-dark/70 hover:text-terracotta'
+                  }`}
+                >
+                  Cadastrar Estabelecimento
+                </button>
+
+                <button
+                  id="nav-tab-btn-auth"
+                  onClick={() => setActiveTab('auth')}
+                  className={`pb-1 transition-all cursor-pointer ${
+                    activeTab === 'auth' 
+                      ? 'text-terracotta border-b-2 border-terracotta font-extrabold' 
+                      : 'text-earth-dark/70 hover:text-terracotta'
+                  }`}
+                >
+                  {currentSession ? 'Minha Conta' : 'Acesso / Entrar'}
+                </button>
+              </nav>
+
+              {/* Session Badging */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setActiveTab('auth')}
+                  className="hidden sm:inline font-mono text-[9px] text-sienna bg-sand-bg border border-sand-border px-2.5 py-1 rounded-md font-bold hover:bg-sand-border/30 transition-all cursor-pointer"
+                >
+                  {currentSession ? `${currentSession.email} (${currentSession.role.toUpperCase()})` : 'VISITANTE'}
+                </button>
+
+                <button 
+                  onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                  className="lg:hidden p-2 rounded-xl border border-clay-border text-earth-dark hover:bg-sand-bg cursor-pointer transition-all"
+                >
+                  {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                </button>
+              </div>
+
             </div>
+          </header>
 
-            {/* Interactive Leaflet Map: 5 or 8 cols depending on detail drawer status */}
-            <div className={`h-[400px] lg:h-full relative overflow-hidden rounded-2xl border border-clay-border shadow-inner ${(selectedId && isProfileDrawerOpen) ? 'lg:col-span-5' : 'lg:col-span-8'}`}>
-              <MapComponent 
-                establishments={filteredEstablishments} 
-                selectedId={selectedId}
-                onSelectEstablishment={(id) => {
-                  setSelectedId(id);
-                  setIsProfileDrawerOpen(false); // Default to floating card when clicking a marker
-                }}
-                centerCoordinates={centerCoordinates}
-                onMapClick={(coords) => {
-                  setMapClickedCoords(coords);
-                  setCenterCoordinates(coords);
+          {/* MOBILE NAVIGATION OVERLAY (Public-Only) */}
+          <AnimatePresence>
+            {mobileMenuOpen && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="lg:hidden bg-white border-b border-clay-border p-5 space-y-2 z-[999] absolute top-[100px] left-0 w-full shadow-lg text-xs font-bold uppercase tracking-widest"
+              >
+                <button
+                  onClick={() => { setActiveTab('mapa'); setMobileMenuOpen(false); }}
+                  className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'mapa' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
+                >
+                  Mapa Nacional
+                </button>
+                <button
+                  onClick={() => { setActiveTab('agenda'); setMobileMenuOpen(false); }}
+                  className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'agenda' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
+                >
+                  Agenda & Cursos
+                </button>
+                <button
+                  onClick={() => { setActiveTab('store'); setMobileMenuOpen(false); }}
+                  className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'store' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
+                >
+                  Insumos & Loja
+                </button>
+                <button
+                  onClick={() => { setActiveTab('cadastro'); setMobileMenuOpen(false); }}
+                  className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'cadastro' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
+                >
+                  Cadastrar Estabelecimento
+                </button>
+                <button
+                  onClick={() => { setActiveTab('auth'); setMobileMenuOpen(false); }}
+                  className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'auth' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
+                >
+                  {currentSession ? 'Minha Conta' : 'Acesso / Entrar'}
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* MAIN PUBLIC STAGE */}
+          <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-5 flex flex-col min-h-0">
+            {activeTab === 'mapa' && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 min-h-[500px] lg:h-[calc(100vh-180px)]">
+                
+                {/* Search & Filter bar: 4 cols */}
+                <div className="lg:col-span-4 flex flex-col gap-4 min-h-[400px] lg:h-full overflow-hidden pr-0 lg:pr-1">
+                  <SearchDiscover
+                    establishments={establishments}
+                    onSelectEstablishment={(id) => { setSelectedId(id); setIsProfileDrawerOpen(false); }}
+                    selectedId={selectedId}
+                    filters={filters}
+                    onFilterChange={setFilters}
+                    userCoords={userCoords}
+                    onToggleUserCoords={handleToggleUserCoords}
+                    onCenterMap={(coords) => setCenterCoordinates(coords)}
+                    mapClickedCoords={mapClickedCoords}
+                    onClearMapClick={() => setMapClickedCoords(null)}
+                  />
+                </div>
+
+                {/* Leaflet Map: 5 or 8 cols */}
+                <div className={`h-[400px] lg:h-full relative overflow-hidden rounded-2xl border border-clay-border shadow-inner ${(selectedId && isProfileDrawerOpen) ? 'lg:col-span-5' : 'lg:col-span-8'}`}>
+                  <MapComponent 
+                    establishments={filteredEstablishments} 
+                    selectedId={selectedId}
+                    onSelectEstablishment={(id) => {
+                      setSelectedId(id);
+                      setIsProfileDrawerOpen(false);
+                    }}
+                    centerCoordinates={centerCoordinates}
+                    onMapClick={(coords) => {
+                      setMapClickedCoords(coords);
+                      setCenterCoordinates(coords);
+                    }}
+                  />
+
+                  {/* Floating Map Card Overlay */}
+                  {selectedId && selectedEstablishment && !isProfileDrawerOpen && (
+                    <MapCard 
+                      establishment={selectedEstablishment}
+                      onClose={() => setSelectedId(null)}
+                      onOpenProfile={() => {
+                        const activeTier = selectedEstablishment.planTier || (selectedEstablishment.isPremium ? 'atelie' : 'gratuito');
+                        if (activeTier !== 'gratuito') {
+                          setIsProfileDrawerOpen(true);
+                        }
+                      }}
+                      onClaimProfile={() => {
+                        setIsProfileDrawerOpen(true);
+                      }}
+                      plans={plans}
+                    />
+                  )}
+                </div>
+
+                {/* Sliding Profile Drawer */}
+                {selectedId && selectedEstablishment && isProfileDrawerOpen && (
+                  <div className="lg:col-span-3 h-[500px] lg:h-full overflow-hidden animate-slideLeft">
+                    <ProfileDetails 
+                      establishment={selectedEstablishment} 
+                      onClose={() => {
+                        setIsProfileDrawerOpen(false);
+                        setSelectedId(null);
+                      }}
+                      onAddReview={handleAddReview}
+                      onClaimProfile={handleClaimProfile}
+                      onTriggerRoute={handleTriggerRoute}
+                      plans={plans}
+                      currentSession={currentSession}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'cadastro' && (
+              <RegistrationForm 
+                onAddFormSubmission={handleAddFormSubmission}
+                onAddSuggestedSpace={handleAddSuggestedSpace}
+                onSuccess={() => {}}
+              />
+            )}
+
+            {activeTab === 'agenda' && (
+              <EventCalendar 
+                establishments={establishments} 
+                onSelectEstablishment={(estId) => {
+                  setSelectedId(estId);
+                  setActiveTab('mapa');
+                  setIsProfileDrawerOpen(false);
                 }}
               />
+            )}
 
-              {/* Floating Free/Standard Map Card Overlay */}
-              {selectedId && selectedEstablishment && !isProfileDrawerOpen && (
-                <MapCard 
-                  establishment={selectedEstablishment}
-                  onClose={() => setSelectedId(null)}
-                  onOpenProfile={() => {
-                    const activeTier = selectedEstablishment.planTier || (selectedEstablishment.isPremium ? 'atelie' : 'gratuito');
-                    if (activeTier !== 'gratuito') {
-                      setIsProfileDrawerOpen(true);
+            {activeTab === 'store' && (
+              <FutureMarketplace />
+            )}
+
+            {activeTab === 'auth' && (
+              <div className="max-w-xl mx-auto py-8 w-full">
+                <AuthModule 
+                  currentSession={currentSession}
+                  onLogin={(session) => {
+                    setCurrentSession(session);
+                    handleAddAuditLog('Autenticação Realizada', `Usuário ${session.name} entrou com sucesso.`);
+                    if (['super_admin', 'admin', 'moderator', 'coordinator'].includes(session.role)) {
+                      changePortal('admin');
+                    } else {
+                      changePortal('partner');
                     }
                   }}
-                  onClaimProfile={() => {
-                    setIsProfileDrawerOpen(true);
+                  onLogout={() => {
+                    setCurrentSession(null);
+                    handleAddAuditLog('Logout Realizado', 'Sessão finalizada pelo usuário.');
+                    setActiveTab('mapa');
                   }}
-                  plans={plans}
-                />
-              )}
-            </div>
-
-            {/* Sliding profile detail panel: 3 cols when open */}
-            {selectedId && selectedEstablishment && isProfileDrawerOpen && (
-              <div className="lg:col-span-3 h-[500px] lg:h-full overflow-hidden animate-slideLeft">
-                <ProfileDetails 
-                  establishment={selectedEstablishment} 
-                  onClose={() => {
-                    setIsProfileDrawerOpen(false);
-                    setSelectedId(null);
-                  }}
-                  onAddReview={handleAddReview}
-                  onClaimProfile={handleClaimProfile}
-                  onTriggerRoute={handleTriggerRoute}
-                  plans={plans}
-                  currentSession={currentSession}
+                  onUpdateSession={setCurrentSession}
+                  onAddAuditLog={handleAddAuditLog}
                 />
               </div>
             )}
+          </main>
+        </>
+      )}
 
-          </div>
-        )}
+      {/* ========================================================= */}
+      {/* 2. ENVIRONMENT: PORTAL DO PARCEIRO                         */}
+      {/* ========================================================= */}
+      {activePortal === 'partner' && (
+        <div className="flex-1 flex flex-col min-h-0 bg-[#F4F1EA]">
+          {/* Partner Portal Header */}
+          <header className="bg-[#FAF9F5] border-b border-clay-border/50 px-6 py-4 shadow-sm">
+            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-[#E07A5F] flex items-center justify-center shadow-sm shrink-0">
+                  <span className="text-white text-xs font-serif font-bold">P</span>
+                </div>
+                <div>
+                  <h1 className="text-lg font-serif font-bold text-earth-dark flex items-center gap-2">
+                    Portal do Parceiro
+                    <span className="text-[9px] uppercase font-bold bg-[#E07A5F]/15 text-[#E07A5F] border border-[#E07A5F]/30 px-2.5 py-0.5 rounded-full">
+                      Área Exclusiva
+                    </span>
+                  </h1>
+                  <p className="text-[10px] text-earth-gray font-mono mt-0.5">
+                    {currentSession ? `VINCULADO COM: ${currentSession.email}` : 'AUTENTICAÇÃO EXIGIDA'}
+                  </p>
+                </div>
+              </div>
 
-        {/* OTHER FULL SCREEN NAVIGATION TABS */}
-        <div className="flex-1">
-          {activeTab === 'cadastro' && (
-            <RegistrationForm 
-              onAddFormSubmission={handleAddFormSubmission}
-              onAddSuggestedSpace={handleAddSuggestedSpace}
-              onSuccess={() => {
-                // Background cron timer handles autoSync automatically
-              }}
-            />
-          )}
+              <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                <button
+                  onClick={() => changePortal('public')}
+                  className="px-4 py-1.5 border border-clay-border text-earth-dark rounded-xl text-xs font-bold hover:bg-white transition-all cursor-pointer"
+                >
+                  ⬅ Retornar ao Mapa Público
+                </button>
+                {currentSession && (
+                  <button
+                    onClick={() => {
+                      setCurrentSession(null);
+                      changePortal('public');
+                    }}
+                    className="px-4 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  >
+                    Desconectar
+                  </button>
+                )}
+              </div>
+            </div>
+          </header>
 
-          {activeTab === 'agenda' && (
-            <EventCalendar 
-              establishments={establishments} 
-              onSelectEstablishment={(estId) => {
-                setSelectedId(estId);
-                setActiveTab('mapa');
-                setIsProfileDrawerOpen(false);
-              }}
-            />
-          )}
-
-          {activeTab === 'sync' && (
-            <CollaborativeSync 
-              sheetRows={sheetRows}
-              syncLogs={syncLogs}
-              onAddFormSubmission={handleAddFormSubmission}
-              onSyncRows={handleSyncRows}
-              onMergeRow={handleMergeRow}
-              onDeleteRow={handleDeleteRow}
-              autoSync={autoSync}
-              setAutoSync={setAutoSync}
-              syncInterval={syncInterval}
-              setSyncInterval={setSyncInterval}
-            />
-          )}
-
-           {activeTab === 'user' && (
-             currentSession && currentSession.role !== 'visitor' ? (
-               <UserDashboard 
-                 establishments={establishments}
-                 onUpdateEstablishment={handleUpdateEstablishment}
-                 onUpgradeToPremium={handleUpgradeToPremium}
-                 onAddEventToEstablishment={handleAddEventToEstablishment}
-                 onAddProductToEstablishment={handleAddProductToEstablishment}
-                 currentSession={currentSession}
-                 onAddAuditLog={handleAddAuditLog}
-               />
-             ) : (
-               <div className="bg-white rounded-2xl border border-clay-border p-8 text-center max-w-md mx-auto my-12 shadow-sm">
-                 <h3 className="font-serif text-xl italic text-earth-dark mb-3">Painel do Parceiro Restrito</h3>
-                 <p className="text-earth-gray text-xs mb-6">Esta área é dedicada exclusivamente a proprietários de ateliês, escolas e ceramistas cadastrados.</p>
-                 <button
-                   onClick={() => setActiveTab('auth')}
-                   className="px-5 py-2.5 bg-terracotta hover:bg-terracotta/90 text-white font-bold text-xs uppercase tracking-widest rounded-lg transition-all"
-                 >
-                   Fazer Login ou Cadastrar-se
-                 </button>
-               </div>
-             )
-           )}
-
-           {activeTab === 'store' && (
-             <FutureMarketplace />
-           )}
-
-           {activeTab === 'auth' && (
-             <div className="max-w-xl mx-auto py-8">
-               <AuthModule 
-                 currentSession={currentSession}
-                 onLogin={(session) => {
-                   setCurrentSession(session);
-                   handleAddAuditLog(
-                     'Autenticação Realizada', 
-                     `Usuário ${session.name} entrou com sucesso com o perfil de ${session.role.toUpperCase()}.`
-                   );
-                   if (['super_admin', 'admin', 'moderator', 'coordinator'].includes(session.role)) {
-                     setActiveTab('admin');
-                   } else {
-                     setActiveTab('mapa');
-                   }
-                 }}
-                 onLogout={() => {
-                   const prevEmail = currentSession?.email;
-                   setCurrentSession(null);
-                   handleAddAuditLog(
-                     'Logout Realizado', 
-                     `Sessão de usuário para ${prevEmail || 'desconhecido'} finalizada.`
-                   );
-                   setActiveTab('mapa');
-                 }}
-                 onUpdateSession={(session) => {
-                   setCurrentSession(session);
-                   handleAddAuditLog(
-                     'Perfil Atualizado', 
-                     `Informações de perfil do usuário ${session.name} foram atualizadas.`
-                   );
-                 }}
-                 onAddAuditLog={(action, notes) => {
-                   handleAddAuditLog(action, notes);
-                 }}
-               />
-             </div>
-           )}
-
-           {activeTab === 'admin' && (
-             ['super_admin', 'admin', 'moderator', 'coordinator'].includes(currentSession?.role || '') ? (
-               <AdminDashboard 
-                 establishments={establishments}
-                 onApproveClaim={handleApproveClaim}
-                 onRejectClaim={handleRejectClaim}
-                 onTogglePremium={handleTogglePremium}
-                 onExportCSV={handleExportCSV}
-                 plans={plans}
-                 onUpdatePlans={handleUpdatePlans}
-                 suggestedSpaces={suggestedSpaces}
-                 onInviteSpace={handleInviteSpace}
-                 onRemoveSuggestedSpace={handleRemoveSuggestedSpace}
-                 onUpdateEstablishmentPlan={handleUpdateEstablishmentPlan}
-                 integrationConfig={integrationConfig}
-                 onUpdateIntegrationConfig={setIntegrationConfig}
-                 onManualSyncGoogleSheets={() => syncWithGoogleSheets(integrationConfig, false)}
-                 syncLogs={syncLogs}
-                 onUpdateEstablishmentCoords={handleUpdateEstablishmentCoords}
-                 onUpdateEstablishment={handleUpdateEstablishment}
-                 
-                 // Security, RBAC & Homologation Prop integrations
-                 currentSession={currentSession}
-                 auditLogs={auditLogs}
-                 onAddAuditLog={handleAddAuditLog}
-                 teamMembers={teamMembers}
-                 onUpdateTeamMembers={setTeamMembers}
-               />
-             ) : (
-               <div className="bg-white rounded-2xl border border-clay-border p-12 text-center max-w-lg mx-auto my-12 shadow-sm">
-                 <div className="w-12 h-12 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                   </svg>
-                 </div>
-                 <h3 className="font-serif text-2xl italic text-earth-dark mb-3">Acesso Administrativo Restrito</h3>
-                 <p className="text-earth-gray text-xs mb-6 max-w-md mx-auto">
-                   Esta área contém informações internas de homologação de cadastros, gerenciamento de equipe e logs de auditoria perpétuos da plataforma.
-                 </p>
-                 <button
-                   onClick={() => setActiveTab('auth')}
-                   className="px-6 py-3 bg-terracotta hover:bg-terracotta/90 text-white font-bold text-xs uppercase tracking-widest rounded-lg transition-all"
-                 >
-                   Identificar-se como Administrador
-                 </button>
-               </div>
-             )
-           )}
+          <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 flex flex-col min-h-0">
+            {currentSession ? (
+              <UserDashboard 
+                establishments={establishments}
+                onUpdateEstablishment={handleUpdateEstablishment}
+                onUpgradeToPremium={handleUpgradeToPremium}
+                onAddEventToEstablishment={handleAddEventToEstablishment}
+                onAddProductToEstablishment={handleAddProductToEstablishment}
+                currentSession={currentSession}
+                onAddAuditLog={handleAddAuditLog}
+              />
+            ) : (
+              <div className="max-w-md mx-auto my-12 bg-white rounded-3xl border border-clay-border/40 p-8 text-center shadow-lg animate-fadeIn">
+                <div className="w-14 h-14 bg-amber-50 text-[#E07A5F] rounded-full flex items-center justify-center mx-auto mb-5 border border-amber-100">
+                  <User className="w-6 h-6" />
+                </div>
+                <h3 className="font-serif text-xl font-bold text-earth-dark mb-2">Acesso Restrito ao Proprietário</h3>
+                <p className="text-earth-gray text-xs mb-6 leading-relaxed">
+                  Para gerenciar seu ateliê, sua equipe, vitrine de produtos, eventos e estatísticas, faça login com a conta cadastrada ou reivindique seu perfil no mapa público.
+                </p>
+                <button
+                  onClick={() => { changePortal('public'); setActiveTab('auth'); }}
+                  className="w-full py-3 bg-[#E07A5F] hover:bg-[#E07A5F]/95 text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-all shadow-md cursor-pointer"
+                >
+                  Entrar ou Registrar-se
+                </button>
+              </div>
+            )}
+          </main>
         </div>
+      )}
 
-      </main>
+      {/* ========================================================= */}
+      {/* 3. ENVIRONMENT: PAINEL ADMINISTRATIVO                    */}
+      {/* ========================================================= */}
+      {activePortal === 'admin' && (
+        <div className="flex-1 flex flex-col min-h-0 bg-slate-900 text-slate-100">
+          
+          {/* Admin Header */}
+          <header className="bg-slate-950 border-b border-slate-800 px-6 py-4 shadow-xl">
+            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-red-700 flex items-center justify-center shadow-md shrink-0">
+                  <span className="text-white text-xs font-serif font-bold">A</span>
+                </div>
+                <div>
+                  <h1 className="text-lg font-serif font-bold text-white flex items-center gap-2">
+                    Painel Executivo Cartografia
+                    <span className="text-[9px] uppercase font-bold bg-red-600/20 text-red-400 border border-red-500/30 px-2.5 py-0.5 rounded-full">
+                      Admin Corporativo
+                    </span>
+                  </h1>
+                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                    {currentSession ? `CONECTADO: ${currentSession.email} (${currentSession.role.toUpperCase()})` : 'MÓDULO DE SEGURANÇA ATIVO'}
+                  </p>
+                </div>
+              </div>
 
-      {/* FOOTER CO-MADE STICKER */}
-      <footer className="bg-white border-t border-clay-border py-4 px-6 text-[11px] text-earth-gray tracking-wide mt-auto">
+              <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                <button
+                  onClick={() => changePortal('public')}
+                  className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer border border-slate-700"
+                >
+                  ⬅ Retornar ao Mapa Público
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 flex flex-col min-h-0">
+            {/* Strict role validation on client (corresponds with backend 403 rule) */}
+            {isAdmin ? (
+              <AdminDashboard 
+                establishments={establishments}
+                onApproveClaim={handleApproveClaim}
+                onRejectClaim={handleRejectClaim}
+                onTogglePremium={handleTogglePremium}
+                onExportCSV={handleExportCSV}
+                plans={plans}
+                onUpdatePlans={handleUpdatePlans}
+                suggestedSpaces={suggestedSpaces}
+                onInviteSpace={handleInviteSpace}
+                onRemoveSuggestedSpace={handleRemoveSuggestedSpace}
+                onUpdateEstablishmentPlan={handleUpdateEstablishmentPlan}
+                integrationConfig={integrationConfig}
+                onUpdateIntegrationConfig={setIntegrationConfig}
+                onManualSyncGoogleSheets={() => syncWithGoogleSheets(integrationConfig, false)}
+                syncLogs={syncLogs}
+                onUpdateEstablishmentCoords={handleUpdateEstablishmentCoords}
+                onUpdateEstablishment={handleUpdateEstablishment}
+                currentSession={currentSession}
+                auditLogs={auditLogs}
+                onAddAuditLog={handleAddAuditLog}
+                teamMembers={teamMembers}
+                onUpdateTeamMembers={setTeamMembers}
+              />
+            ) : (
+              // HTTP 403 FORBIDDEN PAGE (Security compliant, registers violation automatically)
+              <div className="max-w-lg mx-auto my-12 bg-slate-950 rounded-3xl border border-red-900/40 p-8 text-center shadow-2xl animate-fadeIn">
+                <div className="w-16 h-16 bg-red-950 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6 border border-red-900/50">
+                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m0-6v2m0-6H9.412a2 2 0 00-1.414.586L4.586 9.412A2 2 0 004 10.828V18a2 2 0 002 2h12a2 2 0 002-2V10.828a2 2 0 00-.586-1.414l-3.414-3.414A2 2 0 0014.586 5H12z"/>
+                  </svg>
+                </div>
+                <h2 className="text-red-500 font-mono text-xs uppercase tracking-widest font-bold mb-1">Erro de Autorização</h2>
+                <h3 className="font-serif text-2xl font-bold text-white mb-3">HTTP 403 — Forbidden</h3>
+                <p className="text-slate-400 text-xs leading-relaxed mb-6">
+                  Seu perfil atual de acesso ({currentSession ? `Papel: ${currentSession.role}` : 'Visitante Anônimo'}) não possui as permissões necessárias para auditar, homologar ou visualizar dados confidenciais do CeraMapa.
+                </p>
+                
+                <div className="bg-red-950/20 rounded-2xl border border-red-900/30 p-4 mb-6 text-left text-[11px] font-mono text-red-400 space-y-1.5">
+                  <p>● EVENTO_SEGURANÇA: Tentativa de Invasão de URL Protegida</p>
+                  <p>● CONTA: {currentSession ? currentSession.email : 'Anônimo'}</p>
+                  <p>● IP: 189.120.45.102 (Log Registrado na Auditoria Perpétua)</p>
+                  <p>● DECISÃO: Bloqueado pelo servidor central de autenticação.</p>
+                </div>
+
+                <div className="space-y-2">
+                  <button
+                    onClick={() => { changePortal('public'); setActiveTab('auth'); }}
+                    className="w-full py-2.5 bg-red-700 hover:bg-red-800 text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-all shadow-md cursor-pointer"
+                  >
+                    Identificar-se como Administrador
+                  </button>
+                  <button
+                    onClick={() => changePortal('public')}
+                    className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs uppercase tracking-widest rounded-xl transition-all cursor-pointer border border-slate-700"
+                  >
+                    Retornar ao Portal Público
+                  </button>
+                </div>
+              </div>
+            )}
+          </main>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* FOOTER CO-MADE STICKER (Consistent design across environments) */}
+      {/* ========================================================= */}
+      <footer className="bg-white border-t border-clay-border py-4 px-6 text-[11px] text-earth-gray tracking-wide mt-auto shadow-inner">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex flex-wrap gap-4 items-center justify-center md:justify-start">
             <span className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-earth-dark">
@@ -1427,7 +1506,7 @@ export default function App() {
             <span className="italic font-serif">A maior rede de cerâmica autoral do país</span>
           </div>
           
-          <div className="flex gap-4 font-bold uppercase tracking-wider text-[9px] text-sienna">
+          <div className="flex gap-4 font-bold uppercase tracking-wider text-[9px] text-[#E07A5F]">
             <span>Próximos Eventos:</span>
             <span className="italic font-serif normal-case text-earth-dark font-medium">Workshop Torno (PR)</span>
             <span className="text-clay-border">•</span>
@@ -1437,9 +1516,9 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-2 pt-3 mt-3 border-t border-clay-border/60 text-[10px] text-earth-gray">
           <p>© 2026 CeraMapa Brasil. Criado colaborativamente por ceramistas, ateliês e escolas do Brasil.</p>
           <div className="flex gap-4 font-bold uppercase tracking-widest text-[9px]">
-            <span className="hover:text-terracotta transition-all cursor-pointer">Termos</span>
-            <span className="hover:text-terracotta transition-all cursor-pointer">Privacidade</span>
-            <span className="hover:text-terracotta transition-all cursor-pointer">Planilha Pública</span>
+            <span className="hover:text-[#E07A5F] transition-all cursor-pointer">Termos</span>
+            <span className="hover:text-[#E07A5F] transition-all cursor-pointer font-bold">Ambientes Segregados V3.0</span>
+            <span className="hover:text-[#E07A5F] transition-all cursor-pointer">Planilha Pública</span>
           </div>
         </div>
       </footer>

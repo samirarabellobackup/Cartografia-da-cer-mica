@@ -40,11 +40,17 @@ export default function AuthModule({
   // Verification simulations
   const [smsCode, setSmsCode] = useState('');
   const [isSmsSent, setIsSmsSent] = useState(false);
+  const [isVerifyingEmail, setIsVerifyingEmail] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
+  const [enteredCode, setEnteredCode] = useState('');
+  const [pendingSession, setPendingSession] = useState<UserSession | null>(null);
 
   // Sync mode with session presence
   useEffect(() => {
     if (currentSession) {
       setMode('profile');
+      setIsVerifyingEmail(false);
+      setPendingSession(null);
     } else if (mode === 'profile') {
       setMode('login');
     }
@@ -90,15 +96,20 @@ export default function AuthModule({
         email: email,
         name: resolvedName,
         role: resolvedRole,
-        confirmedEmail: email.toLowerCase() === 'samirarabello.backup@gmail.com', // pre-confirm for admin
-        confirmedPhone: email.toLowerCase() === 'samirarabello.backup@gmail.com',
+        confirmedEmail: false, // Must be verified
+        confirmedPhone: false,
         document: document || '123.456.789-00',
         instagram: instagram || '@ceramica_plataforma'
       };
 
-      onLogin(newSession);
-      onAddAuditLog('Login de Usuário', `Acesso bem-sucedido. Perfil: ${resolvedRole.toUpperCase()}`);
-      setSuccess('Acesso realizado com sucesso!');
+      // Trigger verification code flow
+      const code = String(Math.floor(1000 + Math.random() * 9000));
+      setVerificationCode(code);
+      setPendingSession(newSession);
+      setIsVerifyingEmail(true);
+      setEnteredCode('');
+      setSuccess(`Código de segurança enviado para ${email}!`);
+      onAddAuditLog('Código de Segurança Enviado', `Código de verificação de e-mail enviado para ${email}.`);
     }, 800);
   };
 
@@ -124,15 +135,20 @@ export default function AuthModule({
         email,
         name,
         role: resolvedRole,
-        confirmedEmail: false, // will require verification in profile tab
+        confirmedEmail: false, // will require verification
         confirmedPhone: false,
         document: document || 'Não informado',
         instagram: instagram || 'Não informado'
       };
 
-      onLogin(newSession);
-      onAddAuditLog('Cadastro de Usuário', `Novo usuário registrado como ${resolvedRole.toUpperCase()}`);
-      setSuccess('Cadastro realizado com sucesso! Bem-vindo(a) à comunidade.');
+      // Trigger verification code flow
+      const code = String(Math.floor(1000 + Math.random() * 9000));
+      setVerificationCode(code);
+      setPendingSession(newSession);
+      setIsVerifyingEmail(true);
+      setEnteredCode('');
+      setSuccess(`Código de segurança para cadastro enviado para ${email}!`);
+      onAddAuditLog('Código de Segurança Enviado (Cadastro)', `Código de verificação enviado para ${email}.`);
     }, 1000);
   };
 
@@ -231,14 +247,20 @@ export default function AuthModule({
       email: testEmail,
       name: testName,
       role: role,
-      confirmedEmail: true,
+      confirmedEmail: false,
       confirmedPhone: true,
       document: '44.555.666/0001-99',
       instagram: '@ceramica_plataforma'
     };
-    onLogin(newSession);
-    onAddAuditLog('Acesso Rápido de Testes', `Entrou com perfil simulado de ${role.toUpperCase()}`);
-    setSuccess(`Logado dinamicamente como ${testName}!`);
+    
+    // Trigger verification code flow
+    const code = String(Math.floor(1000 + Math.random() * 9000));
+    setVerificationCode(code);
+    setPendingSession(newSession);
+    setIsVerifyingEmail(true);
+    setEnteredCode('');
+    setSuccess(`Código de segurança rápido gerado para ${testEmail}!`);
+    onAddAuditLog('Acesso Rápido - Verificação Solicitada', `Código de verificação enviado para o e-mail: ${testEmail}`);
   };
 
   return (
@@ -268,8 +290,80 @@ export default function AuthModule({
           </div>
         )}
 
+        {isVerifyingEmail && pendingSession && (
+          <div className="space-y-4 animate-fadeIn">
+            <div className="text-center pb-2">
+              <div className="w-12 h-12 bg-amber-50 text-terracotta rounded-full flex items-center justify-center mx-auto mb-3 border border-amber-100">
+                <Shield className="w-6 h-6" />
+              </div>
+              <h3 className="font-serif font-bold text-lg text-earth-dark">Verificação de E-mail</h3>
+              <p className="text-xs text-earth-gray mt-1 leading-relaxed">
+                Enviamos um código de acesso seguro para o endereço: <br />
+                <strong className="text-earth-dark">{pendingSession.email}</strong>
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-earth-gray uppercase tracking-wider block text-center">
+                Código de 4 Dígitos
+              </label>
+              <input 
+                type="text" 
+                maxLength={4}
+                value={enteredCode}
+                onChange={(e) => setEnteredCode(e.target.value.replace(/\D/g, ''))}
+                placeholder="0 0 0 0"
+                className="w-full text-center py-3 text-xl font-mono tracking-[0.5em] bg-sand-bg/20 border border-clay-border rounded-xl focus:outline-none focus:border-terracotta transition-all text-earth-dark font-bold animate-pulse"
+              />
+            </div>
+
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-950 leading-relaxed text-center font-medium">
+              Simulador CeraMapa: Digite o código <span className="font-mono text-xs bg-amber-200 px-1.5 py-0.5 rounded font-bold text-amber-950">{verificationCode}</span> para validar seu acesso.
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsVerifyingEmail(false);
+                  setPendingSession(null);
+                  setEnteredCode('');
+                  setError('');
+                  setSuccess('');
+                }}
+                className="w-1/3 py-2 border border-clay-border hover:bg-sand-bg/30 text-earth-dark font-bold rounded-xl text-xs transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setError('');
+                  if (enteredCode === verificationCode) {
+                    const verifiedSession = {
+                      ...pendingSession,
+                      confirmedEmail: true
+                    };
+                    onLogin(verifiedSession);
+                    onAddAuditLog('E-mail Verificado com Sucesso', `O usuário ${pendingSession.email} concluiu a verificação de e-mail e realizou login.`);
+                    setSuccess('Acesso autorizado! Carregando painel...');
+                    setIsVerifyingEmail(false);
+                    setPendingSession(null);
+                    setEnteredCode('');
+                  } else {
+                    setError('Código incorreto. Por favor, digite o código de 4 dígitos gerado.');
+                  }
+                }}
+                className="w-2/3 py-2 bg-terracotta hover:bg-sienna text-white font-bold rounded-xl text-xs transition-all cursor-pointer animate-bounce"
+              >
+                Confirmar Código
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* MODE: LOGIN */}
-        {mode === 'login' && (
+        {!isVerifyingEmail && mode === 'login' && (
           <form onSubmit={handleLoginSubmit} className="space-y-4">
             <h3 className="font-serif font-bold text-base text-earth-dark mb-1">Acessar Conta</h3>
             
@@ -340,7 +434,7 @@ export default function AuthModule({
         )}
 
         {/* MODE: REGISTER */}
-        {mode === 'register' && (
+        {!isVerifyingEmail && mode === 'register' && (
           <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
             <h3 className="font-serif font-bold text-base text-earth-dark mb-1">Criar Conta na Comunidade</h3>
             
@@ -465,7 +559,7 @@ export default function AuthModule({
         )}
 
         {/* MODE: PASSWORD RECOVERY */}
-        {mode === 'recovery' && (
+        {!isVerifyingEmail && mode === 'recovery' && (
           <form onSubmit={handleRecoverySubmit} className="space-y-4">
             <h3 className="font-serif font-bold text-base text-earth-dark mb-1 flex items-center gap-2">
               <Key className="w-5 h-5 text-terracotta" />
@@ -510,7 +604,7 @@ export default function AuthModule({
         )}
 
         {/* MODE: LOGGED IN USER PROFILE PANEL */}
-        {mode === 'profile' && currentSession && (
+        {!isVerifyingEmail && mode === 'profile' && currentSession && (
           <div className="space-y-5">
             <div className="p-4 bg-sand-bg/40 border border-clay-border/50 rounded-2xl flex items-center gap-3">
               <div className="w-10 h-10 bg-terracotta/20 rounded-full flex items-center justify-center text-terracotta font-serif text-lg font-black shrink-0">

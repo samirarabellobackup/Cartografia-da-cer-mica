@@ -74,6 +74,8 @@ export default function AdminDashboard({
   const [isExporting, setIsExporting] = useState(false);
   const [inviteModalSpace, setInviteModalSpace] = useState<SuggestedSpace | null>(null);
   
+  const isSuperAdmin = currentSession?.role === 'super_admin';
+  
   // Plan edit form states
   const [editingPlanId, setEditingPlanId] = useState<PlanTier | null>(null);
   const [editPlanName, setEditPlanName] = useState('');
@@ -1448,101 +1450,113 @@ export default function AdminDashboard({
               RBAC Ativo
             </span>
           </div>
-
+ 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
             {/* Column: Add Team Member */}
             <div className="lg:col-span-1 p-5 border border-clay-border rounded-2xl bg-white space-y-4 h-fit">
-              <h4 className="font-bold text-sienna uppercase tracking-wide border-b border-clay-border/30 pb-1.5">Convidar Colaborador</h4>
+              <h4 className="font-bold text-sienna uppercase tracking-wide border-b border-clay-border/30 pb-1.5 flex justify-between items-center">
+                <span>Convidar Colaborador</span>
+                {!isSuperAdmin && <span className="text-[9px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-sans font-bold">BLOQUEADO</span>}
+              </h4>
               
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-gray-700 font-bold mb-1">Nome Completo</label>
-                  <input 
-                    type="text" 
-                    id="tm_name"
-                    placeholder="Nome do integrante"
-                    className="w-full p-2 border border-clay-border rounded-lg text-xs bg-white text-earth-dark"
-                  />
+              {!isSuperAdmin ? (
+                <div className="p-3 bg-red-50 text-red-800 rounded-xl border border-red-100 text-[11px] leading-relaxed">
+                  <strong>Acesso Restrito:</strong> Apenas a Super Administradora da plataforma possui autoridade de convidar integrantes corporativos ou outorgar papéis de moderação e coordenação.
                 </div>
-                <div>
-                  <label className="block text-gray-700 font-bold mb-1">E-mail Corporativo</label>
-                  <input 
-                    type="email" 
-                    id="tm_email"
-                    placeholder="email@ceramapa.org"
-                    className="w-full p-2 border border-clay-border rounded-lg text-xs bg-white text-earth-dark"
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-700 font-bold mb-1">Cargo / Função</label>
-                  <select 
-                    id="tm_role"
-                    className="w-full p-2 border border-clay-border rounded-lg text-xs bg-white text-earth-dark"
-                  >
-                    <option value="moderator">Moderador Regional</option>
-                    <option value="coordinator">Coordenador do Estado</option>
-                    <option value="admin">Administrador Geral</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1.5 pt-1">
-                  <label className="block text-gray-700 font-bold">Permissões Específicas</label>
-                  <div className="space-y-1">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" defaultChecked className="w-3.5 h-3.5 text-terracotta" />
-                      <span>Homologar cadastros novos</span>
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" defaultChecked className="w-3.5 h-3.5 text-terracotta" />
-                      <span>Revisar geocodificação</span>
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" className="w-3.5 h-3.5 text-terracotta" />
-                      <span>Editar planos comerciais</span>
-                    </label>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-gray-700 font-bold mb-1">Nome Completo</label>
+                    <input 
+                      type="text" 
+                      id="tm_name"
+                      placeholder="Nome do integrante"
+                      className="w-full p-2 border border-clay-border rounded-lg text-xs bg-white text-earth-dark"
+                    />
                   </div>
+                  <div>
+                    <label className="block text-gray-700 font-bold mb-1">E-mail Corporativo</label>
+                    <input 
+                      type="type" 
+                      id="tm_email"
+                      placeholder="email@ceramapa.org"
+                      className="w-full p-2 border border-clay-border rounded-lg text-xs bg-white text-earth-dark"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 font-bold mb-1">Cargo / Função</label>
+                    <select 
+                      id="tm_role"
+                      className="w-full p-2 border border-clay-border rounded-lg text-xs bg-white text-earth-dark"
+                    >
+                      <option value="moderator">Moderador Regional</option>
+                      <option value="coordinator">Coordenador do Estado</option>
+                      <option value="admin">Administrador Geral</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5 pt-1">
+                    <label className="block text-gray-700 font-bold">Permissões Específicas</label>
+                    <div className="space-y-1">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" defaultChecked className="w-3.5 h-3.5 text-terracotta" />
+                        <span>Homologar cadastros novos</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" defaultChecked className="w-3.5 h-3.5 text-terracotta" />
+                        <span>Revisar geocodificação</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" className="w-3.5 h-3.5 text-terracotta" />
+                        <span>Editar planos comerciais</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nameVal = (document.getElementById('tm_name') as HTMLInputElement)?.value;
+                      const emailVal = (document.getElementById('tm_email') as HTMLInputElement)?.value;
+                      const roleVal = (document.getElementById('tm_role') as HTMLSelectElement)?.value as UserRole;
+                      
+                      if (!nameVal || !emailVal) {
+                        alert('Preencha os dados do colaborador.');
+                        return;
+                      }
+
+                      const newMember: TeamMember = {
+                        id: 'tm_' + Date.now(),
+                        email: emailVal,
+                        name: nameVal,
+                        role: roleVal,
+                        permissions: ['homologate', 'geocoding'],
+                        status: 'active',
+                        history: [`Convidado por ${currentSession?.name || 'Administrador'}`]
+                      };
+
+                      onUpdateTeamMembers([...teamMembers, newMember]);
+                      onAddAuditLog('Convidar Colaborador', `Colaborador ${nameVal} convidado com cargo de ${roleVal.toUpperCase()}`);
+                      alert(`Colaborador ${nameVal} convidado com sucesso!`);
+                      
+                      (document.getElementById('tm_name') as HTMLInputElement).value = '';
+                      (document.getElementById('tm_email') as HTMLInputElement).value = '';
+                    }}
+                    className="w-full py-2 bg-sienna hover:bg-earth-dark text-white font-bold rounded-xl text-xs uppercase cursor-pointer"
+                  >
+                    Enviar Convite Oficial
+                  </button>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nameVal = (document.getElementById('tm_name') as HTMLInputElement)?.value;
-                    const emailVal = (document.getElementById('tm_email') as HTMLInputElement)?.value;
-                    const roleVal = (document.getElementById('tm_role') as HTMLSelectElement)?.value as UserRole;
-                    
-                    if (!nameVal || !emailVal) {
-                      alert('Preencha os dados do colaborador.');
-                      return;
-                    }
-
-                    const newMember: TeamMember = {
-                      id: 'tm_' + Date.now(),
-                      email: emailVal,
-                      name: nameVal,
-                      role: roleVal,
-                      permissions: ['homologate', 'geocoding'],
-                      status: 'active',
-                      history: [`Convidado por ${currentSession?.name || 'Administrador'}`]
-                    };
-
-                    onUpdateTeamMembers([...teamMembers, newMember]);
-                    onAddAuditLog('Convidar Colaborador', `Colaborador ${nameVal} convidado com cargo de ${roleVal.toUpperCase()}`);
-                    alert(`Colaborador ${nameVal} convidado com sucesso!`);
-                    
-                    (document.getElementById('tm_name') as HTMLInputElement).value = '';
-                    (document.getElementById('tm_email') as HTMLInputElement).value = '';
-                  }}
-                  className="w-full py-2 bg-sienna hover:bg-earth-dark text-white font-bold rounded-xl text-xs uppercase"
-                >
-                  Enviar Convite Oficial
-                </button>
-              </div>
+              )}
             </div>
 
             {/* Column: Active Members List */}
             <div className="lg:col-span-2 p-5 border border-clay-border rounded-2xl bg-white space-y-4">
-              <h4 className="font-bold text-earth-dark uppercase tracking-wide border-b border-clay-border/30 pb-1.5">Equipe Registrada</h4>
+              <h4 className="font-bold text-earth-dark uppercase tracking-wide border-b border-clay-border/30 pb-1.5 flex justify-between items-center">
+                <span>Equipe Registrada</span>
+                {!isSuperAdmin && <span className="text-[10px] text-earth-gray font-normal italic">Visualização Somente Leitura</span>}
+              </h4>
 
               <div className="space-y-3">
                 {teamMembers.map((member) => (
@@ -1564,6 +1578,7 @@ export default function AdminDashboard({
                     <div className="flex gap-1.5 items-center">
                       <button
                         type="button"
+                        disabled={!isSuperAdmin}
                         onClick={() => {
                           const updated = teamMembers.map(m => m.id === member.id ? {
                             ...m,
@@ -1573,6 +1588,8 @@ export default function AdminDashboard({
                           onAddAuditLog('Alteração de Acesso', `Membro ${member.name} alterado para status ${member.status === 'active' ? 'INATIVO' : 'ATIVO'}`);
                         }}
                         className={`px-2.5 py-1.5 rounded-lg font-bold text-[10px] ${
+                          !isSuperAdmin ? 'opacity-80 cursor-not-allowed' : 'cursor-pointer'
+                        } ${
                           member.status === 'active'
                             ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                             : 'bg-red-50 text-red-800 border border-red-200'
@@ -1584,6 +1601,7 @@ export default function AdminDashboard({
                       {member.role !== 'super_admin' && (
                         <button
                           type="button"
+                          disabled={!isSuperAdmin}
                           onClick={() => {
                             if (confirm(`Deseja remover ${member.name} da equipe?`)) {
                               const updated = teamMembers.filter(m => m.id !== member.id);
@@ -1591,7 +1609,11 @@ export default function AdminDashboard({
                               onAddAuditLog('Remover Colaborador', `Colaborador ${member.name} removido da equipe.`);
                             }
                           }}
-                          className="p-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50"
+                          className={`p-1.5 rounded-lg border ${
+                            !isSuperAdmin 
+                              ? 'border-gray-200 text-gray-300 cursor-not-allowed' 
+                              : 'border-red-200 text-red-500 hover:bg-red-50 cursor-pointer'
+                          }`}
                         >
                           <Trash className="w-3.5 h-3.5" />
                         </button>

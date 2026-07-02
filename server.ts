@@ -154,7 +154,7 @@ async function startServer() {
     }
 
     // Platform Admins and Super Admins can edit any profile
-    if (['super_admin', 'admin'].includes(session.role)) {
+    if (session.email.toLowerCase() === 'samirarabello.backup@gmail.com') {
       return { authorized: true };
     }
 
@@ -204,6 +204,81 @@ async function startServer() {
     };
   }
 
+  // --- REUSABLE DATABASE SANITIZER FOR ACCESS SEGREGATION ---
+  function sanitizeDbForRole(session: UserSession | null, rawDb: ServerDatabase): Partial<ServerDatabase> {
+    const isPlatformAdmin = session && session.email.toLowerCase() === 'samirarabello.backup@gmail.com';
+    const isSuperAdmin = session && session.email.toLowerCase() === 'samirarabello.backup@gmail.com';
+
+    if (isPlatformAdmin) {
+      return {
+        establishments: rawDb.establishments,
+        auditLogs: isSuperAdmin ? rawDb.auditLogs : rawDb.auditLogs.map(l => ({ ...l, ip: 'REDACTED' })),
+        sheetRows: rawDb.sheetRows,
+        syncLogs: rawDb.syncLogs,
+        plans: rawDb.plans,
+        suggestedSpaces: rawDb.suggestedSpaces,
+        teamMembers: rawDb.teamMembers,
+        integrationConfig: rawDb.integrationConfig
+      };
+    }
+
+    if (session) {
+      // Authenticated Partner: strip other establishments' sensitive details
+      const sanitizedEstablishments = rawDb.establishments.map(est => {
+        const isOwnerOrTeam = est.ownerEmail === session.email || 
+                             est.ownerId === session.id || 
+                             est.claimantEmail === session.email ||
+                             est.team?.some(t => t.email === session.email);
+        if (isOwnerOrTeam) {
+          return est;
+        } else {
+          const { 
+            claimantEmail, claimantName, claimantDocument, claimantPhone, claimantJustification, 
+            team, ...publicEst 
+          } = est;
+          return {
+            ...publicEst,
+            team: []
+          };
+        }
+      });
+
+      return {
+        establishments: sanitizedEstablishments as any,
+        plans: rawDb.plans,
+        auditLogs: [],
+        sheetRows: [],
+        syncLogs: [],
+        suggestedSpaces: [],
+        teamMembers: [],
+        integrationConfig: { status: 'inactive', syncMethod: 'manual', syncInterval: 60 } as any
+      };
+    }
+
+    // Anonymous Public Visitor
+    const publicEstablishments = rawDb.establishments.map(est => {
+      const { 
+        claimantEmail, claimantName, claimantDocument, claimantPhone, claimantJustification, 
+        team, ...publicEst 
+      } = est;
+      return {
+        ...publicEst,
+        team: []
+      };
+    });
+
+    return {
+      establishments: publicEstablishments as any,
+      plans: rawDb.plans,
+      auditLogs: [],
+      sheetRows: [],
+      syncLogs: [],
+      suggestedSpaces: [],
+      teamMembers: [],
+      integrationConfig: { status: 'inactive', syncMethod: 'manual', syncInterval: 60 } as any
+    };
+  }
+
   // --- REST API ENDPOINTS ---
 
   // Health check
@@ -211,14 +286,17 @@ async function startServer() {
     res.json({ status: 'ok' });
   });
 
-  // Fetch full state (for mounting the app with real database values)
+  // Fetch full state (Sanitized based on active environment session)
   app.get('/api/db', (req, res) => {
-    res.json(db);
+    const session = getSession(req);
+    res.json(sanitizeDbForRole(session, db));
   });
 
   // Fetch establishments
   app.get('/api/establishments', (req, res) => {
-    res.json(db.establishments);
+    const session = getSession(req);
+    const sanitized = sanitizeDbForRole(session, db);
+    res.json(sanitized.establishments);
   });
 
   // Submit / Update Audit Log
@@ -434,7 +512,7 @@ async function startServer() {
     const { id } = req.params;
     const session = getSession(req);
 
-    if (!session || !['super_admin', 'admin'].includes(session.role)) {
+    if (!session || session.email.toLowerCase() !== 'samirarabello.backup@gmail.com') {
       res.status(403).json({ error: 'Permissão administrativa necessária.' });
       return;
     }
@@ -497,7 +575,7 @@ async function startServer() {
     const { id } = req.params;
     const session = getSession(req);
 
-    if (!session || !['super_admin', 'admin'].includes(session.role)) {
+    if (!session || session.email.toLowerCase() !== 'samirarabello.backup@gmail.com') {
       res.status(403).json({ error: 'Permissão administrativa necessária.' });
       return;
     }
@@ -644,9 +722,85 @@ async function startServer() {
     res.status(400).json({ error: 'Passo de transferência inválido.' });
   });
 
-  // Fetch sheet rows (Public/Admin depends)
+  // Fetch sheet rows (Restricted to logged-in administrative roles)
   app.get('/api/sheet-rows', (req, res) => {
+    const session = getSession(req);
+    if (!session || session.email.toLowerCase() !== 'samirarabello.backup@gmail.com') {
+      logAction(
+        session?.email || 'Anônimo',
+        'Tentativa Violada: Acesso à API de Planilha Negado (403)',
+        'Tentativa não autorizada de ler dados brutos da planilha de sincronização.'
+      );
+      res.status(403).json({ error: 'Permissão de administrador necessária.' });
+      return;
+    }
     res.json(db.sheetRows);
+  });
+
+  // Fetch admin team members list (Admin only)
+  app.get('/api/admin/team-members', (req, res) => {
+    const session = getSession(req);
+    if (!session || session.email.toLowerCase() !== 'samirarabello.backup@gmail.com') {
+      res.status(403).json({ error: 'Acesso negado.' });
+      return;
+    }
+    res.json(db.teamMembers);
+  });
+
+  // Add platform team member (Super Administradora only)
+  app.post('/api/admin/team-members', (req, res) => {
+    const session = getSession(req);
+    if (!session || session.email.toLowerCase() !== 'samirarabello.backup@gmail.com') {
+      logAction(
+        session?.email || 'Anônimo',
+        'Invasão de Permissões Negada (403)',
+        'Tentativa não autorizada de convidar membro para a equipe corporativa da plataforma.'
+      );
+      res.status(403).json({ error: 'Apenas a Super Administradora da plataforma pode gerenciar a Equipe da Plataforma.' });
+      return;
+    }
+    const member = req.body;
+    db.teamMembers.push(member);
+    saveDatabase(db);
+    logAction(session.email, 'Membro da Equipe Convidado', `O integrante ${member.name} foi convidado para o cargo de ${member.role.toUpperCase()}.`);
+    res.json({ success: true, teamMembers: db.teamMembers });
+  });
+
+  // Edit or Suspend platform team member (Super Administradora only)
+  app.put('/api/admin/team-members/:id', (req, res) => {
+    const session = getSession(req);
+    if (!session || session.email.toLowerCase() !== 'samirarabello.backup@gmail.com') {
+      res.status(403).json({ error: 'Apenas a Super Administradora pode alterar o status ou cargo de membros de equipe.' });
+      return;
+    }
+    const { id } = req.params;
+    const updates = req.body;
+    const index = db.teamMembers.findIndex(m => m.id === id);
+    if (index !== -1) {
+      const prev = JSON.stringify(db.teamMembers[index]);
+      db.teamMembers[index] = { ...db.teamMembers[index], ...updates };
+      saveDatabase(db);
+      logAction(session.email, 'Membro da Equipe Atualizado', `Integrante ${db.teamMembers[index].name} atualizado.`, id, db.teamMembers[index].name, prev, JSON.stringify(db.teamMembers[index]));
+    }
+    res.json({ success: true, teamMembers: db.teamMembers });
+  });
+
+  // Delete platform team member (Super Administradora only)
+  app.delete('/api/admin/team-members/:id', (req, res) => {
+    const session = getSession(req);
+    if (!session || session.email.toLowerCase() !== 'samirarabello.backup@gmail.com') {
+      res.status(403).json({ error: 'Apenas a Super Administradora pode remover membros da equipe.' });
+      return;
+    }
+    const { id } = req.params;
+    const index = db.teamMembers.findIndex(m => m.id === id);
+    if (index !== -1) {
+      const name = db.teamMembers[index].name;
+      db.teamMembers.splice(index, 1);
+      saveDatabase(db);
+      logAction(session.email, 'Membro da Equipe Excluído', `O integrante de equipe ${name} foi excluído permanentemente da administração.`);
+    }
+    res.json({ success: true, teamMembers: db.teamMembers });
   });
 
   // Create form submission (New row from frontend)
@@ -676,7 +830,7 @@ async function startServer() {
     const session = getSession(req);
     const { fetchedRows, isBackground } = req.body;
 
-    if (!isBackground && (!session || !['super_admin', 'admin', 'moderator', 'coordinator'].includes(session.role))) {
+    if (!isBackground && (!session || session.email.toLowerCase() !== 'samirarabello.backup@gmail.com')) {
       res.status(403).json({ error: 'Permissão de moderador/administrador necessária para sincronização.' });
       return;
     }
