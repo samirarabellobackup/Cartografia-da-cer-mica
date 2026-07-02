@@ -64,10 +64,8 @@ export default function MapCard({
     window.open(`https://instagram.com/${establishment.instagram.replace('@', '')}`, '_blank');
   };
 
-  const activeTier = establishment.planTier || (establishment.isPremium ? 'atelie' : 'gratuito');
-  const planInfo = plans?.find(p => p.id === activeTier);
-  const planName = planInfo?.name || (activeTier === 'atelie' ? 'Plano Ateliê' : activeTier === 'estudio' ? 'Plano Estúdio' : activeTier === 'institucional' ? 'Plano Institucional' : 'Perfil Oficial Gratuito');
-  const canOpenProfile = activeTier !== 'gratuito';
+  const planName = 'Perfil Oficial Cadastrado';
+  const canOpenProfile = true;
 
   return (
     <div className="absolute bottom-4 left-4 right-4 sm:right-auto sm:w-[360px] bg-white/95 backdrop-blur-md rounded-2xl border-2 border-clay-border shadow-2xl p-4.5 z-[1000] space-y-3.5 animate-slideUp text-xs text-earth-dark font-sans">
@@ -78,17 +76,6 @@ export default function MapCard({
           <span className="text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-sand-card text-terracotta border border-sand-border">
             {establishment.category}
           </span>
-          {activeTier !== 'gratuito' && (
-            <span className={`inline-flex items-center gap-0.5 text-[8px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-              activeTier === 'atelie' 
-                ? 'text-amber-800 bg-amber-50 border-amber-200' 
-                : activeTier === 'estudio'
-                ? 'text-purple-800 bg-purple-50 border-purple-200'
-                : 'text-emerald-800 bg-emerald-50 border-emerald-200'
-            }`}>
-              ⭐ {planName}
-            </span>
-          )}
         </div>
         <button 
           onClick={onClose}
@@ -166,37 +153,15 @@ export default function MapCard({
         </button>
       </div>
 
-      {/* Primary Button: Ver Perfil (Premium Only) or Reivindicar/Info */}
+      {/* Primary Button: Ver Perfil */}
       <div className="pt-1.5">
-        {canOpenProfile ? (
-          <button
-            onClick={onOpenProfile}
-            className="w-full py-2 rounded-xl bg-terracotta hover:bg-sienna text-white text-xs font-bold transition-all cursor-pointer shadow-md flex items-center justify-center gap-1 uppercase tracking-wider"
-          >
-            Ver Perfil Completo ({planName})
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        ) : (
-          <div className="space-y-2">
-            {/* Standard Profile Badge / Info */}
-            <div className="p-2 bg-sand-bg/60 border border-sand-border rounded-lg text-[10px] text-earth-gray flex items-center justify-between">
-              <span className="font-semibold">{planName}</span>
-              {!establishment.claimed && (
-                <button
-                  onClick={onClaimProfile}
-                  className="text-terracotta hover:text-sienna font-bold underline cursor-pointer"
-                >
-                  Este perfil é meu
-                </button>
-              )}
-              {establishment.claimed && (
-                <span className="text-olive font-bold flex items-center gap-0.5">
-                  <ShieldCheck className="w-3 h-3" /> Perfil Oficial Verificado
-                </span>
-              )}
-            </div>
-          </div>
-        )}
+        <button
+          onClick={onOpenProfile}
+          className="w-full py-2 rounded-xl bg-terracotta hover:bg-sienna text-white text-xs font-bold transition-all cursor-pointer shadow-md flex items-center justify-center gap-1 uppercase tracking-wider"
+        >
+          Ver Perfil Completo
+          <ArrowRight className="w-3.5 h-3.5" />
+        </button>
       </div>
 
     </div>

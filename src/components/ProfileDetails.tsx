@@ -28,24 +28,23 @@ export default function ProfileDetails({
 }: ProfileDetailsProps) {
   const [activeTab, setActiveTab] = useState<'sobre' | 'agenda' | 'produtos' | 'avaliacoes'>('sobre');
 
-  const activeTier = establishment.planTier || (establishment.isPremium ? 'atelie' : 'gratuito');
-  const planInfo = plans?.find(p => p.id === activeTier);
-  const planName = planInfo?.name || (activeTier === 'atelie' ? 'Plano Ateliê' : activeTier === 'estudio' ? 'Plano Estúdio' : activeTier === 'institucional' ? 'Plano Institucional' : 'Perfil Oficial Gratuito');
+  const activeTier: string = 'atelie';
+  const planName = 'Perfil Oficial Cadastrado';
 
-  const hasTabs = activeTier !== 'gratuito';
+  const hasTabs = true;
   
   // Feature flags
-  const showGallery = activeTier !== 'gratuito';
-  const maxPhotosAllowed = activeTier === 'atelie' ? 4 : activeTier === 'estudio' ? 10 : activeTier === 'institucional' ? 20 : 1;
+  const showGallery = true;
+  const maxPhotosAllowed = 20;
   
-  const showLogoAndBanner = activeTier !== 'gratuito';
-  const showServices = activeTier !== 'gratuito';
+  const showLogoAndBanner = true;
+  const showServices = true;
   
-  const showVideo = activeTier === 'estudio' || activeTier === 'institucional';
-  const showAgendaTab = activeTier === 'estudio' || activeTier === 'institucional';
-  const showProductsTab = activeTier === 'estudio' || activeTier === 'institucional';
-  const showStats = activeTier === 'estudio' || activeTier === 'institucional';
-  const showCustomButtons = activeTier === 'estudio' || activeTier === 'institucional';
+  const showVideo = true;
+  const showAgendaTab = true;
+  const showProductsTab = true;
+  const showStats = true;
+  const showCustomButtons = true;
 
   
   // Modals state
@@ -495,29 +494,6 @@ export default function ProfileDetails({
                 </p>
               </div>
             </div>
-
-            {/* Standard limitations & Claim Call to Action */}
-            {!establishment.claimed && (
-              <div className="bg-amber-50 border border-amber-200/60 p-4 rounded-xl space-y-2">
-                <div className="flex gap-2">
-                  <Sparkles className="w-5 h-5 text-amber-500 shrink-0" />
-                  <div>
-                    <h4 className="text-sm font-semibold text-amber-900">Você é o proprietário?</h4>
-                    <p className="text-xs text-amber-700 leading-normal mt-0.5">
-                      Reivindique esta página gratuitamente para responder avaliações, atualizar contatos e cadastrar eventos. Assine Premium para expor fotos, vídeos e uma vitrine.
-                    </p>
-                  </div>
-                </div>
-                <div className="pt-1 flex justify-end">
-                  <button 
-                    onClick={() => setShowClaimModal(true)}
-                    className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-all cursor-pointer shadow-sm"
-                  >
-                    Reivindicar Perfil Grátis
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         )}
 

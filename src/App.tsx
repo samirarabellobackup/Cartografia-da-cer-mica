@@ -30,22 +30,27 @@ import AuthModule from './components/AuthModule';
 
 export default function App() {
   const [activePortal, setActivePortal] = useState<'public' | 'partner' | 'admin'>('public');
-  const [activeTab, setActiveTab] = useState<'mapa' | 'agenda' | 'sync' | 'user' | 'store' | 'admin' | 'cadastro' | 'auth'>('mapa');
+  const [activeTab, setActiveTab] = useState<string>('mapa');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [ateliesSearch, setAteliesSearch] = useState('');
+  const [fornecedoresSearch, setFornecedoresSearch] = useState('');
 
   // Support URL hash routing for isolated environments!
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
-      if (hash === '#admin') {
-        setActivePortal('admin');
-        setActiveTab('admin');
-      } else if (hash === '#parceiro') {
-        setActivePortal('partner');
-        setActiveTab('user');
+      if (hash === '#atelies') {
+        setActiveTab('atelies');
+      } else if (hash === '#fornecedores') {
+        setActiveTab('fornecedores');
+      } else if (hash === '#agenda') {
+        setActiveTab('agenda');
+      } else if (hash === '#sobre') {
+        setActiveTab('sobre');
       } else {
-        setActivePortal('public');
+        setActiveTab('mapa');
       }
+      setActivePortal('public');
     };
 
     window.addEventListener('hashchange', handleHashChange);
@@ -55,17 +60,9 @@ export default function App() {
   }, []);
 
   const changePortal = (portal: 'public' | 'partner' | 'admin') => {
-    setActivePortal(portal);
-    if (portal === 'admin') {
-      window.location.hash = 'admin';
-      setActiveTab('admin');
-    } else if (portal === 'partner') {
-      window.location.hash = 'parceiro';
-      setActiveTab('user');
-    } else {
-      window.location.hash = 'publico';
-      setActiveTab('mapa');
-    }
+    setActivePortal('public');
+    setActiveTab('mapa');
+    window.location.hash = 'mapa';
   };
 
   // Security, Session & RBAC states
@@ -525,6 +522,55 @@ export default function App() {
 
     return matchesQuery && matchesCategory && matchesState && matchesSpecialties && matchesServices;
   });
+
+  // Derived filtered lists for the dedicated MVP tabs
+  const filteredAteliesList = establishments.filter(est => {
+    // Include only standard Ateliê/Artisan categories
+    const isAtelieCategory = est.category === 'Ateliê' || est.category === 'Ateliê Escola' || est.category === 'Ceramista' || est.category === 'Professor' || est.category === 'Escola';
+    if (!isAtelieCategory) return false;
+    if (!ateliesSearch.trim()) return true;
+    const query = ateliesSearch.toLowerCase();
+    return (
+      est.name.toLowerCase().includes(query) ||
+      est.city.toLowerCase().includes(query) ||
+      est.state.toLowerCase().includes(query) ||
+      est.specialties.some(s => s.toLowerCase().includes(query)) ||
+      (est.neighborhood && est.neighborhood.toLowerCase().includes(query))
+    );
+  });
+
+  const filteredFornecedoresList = establishments.filter(est => {
+    // Include only standard Supply/Supplier categories
+    const isSupplierCategory = est.category === 'Fornecedor' || est.category === 'Fabricante' || est.category === 'Importador' || est.category === 'Loja' || est.category === 'Assistência Técnica' || est.category === 'Queima';
+    if (!isSupplierCategory) return false;
+    if (!fornecedoresSearch.trim()) return true;
+    const query = fornecedoresSearch.toLowerCase();
+    return (
+      est.name.toLowerCase().includes(query) ||
+      est.city.toLowerCase().includes(query) ||
+      est.state.toLowerCase().includes(query) ||
+      est.specialties.some(s => s.toLowerCase().includes(query)) ||
+      (est.neighborhood && est.neighborhood.toLowerCase().includes(query))
+    );
+  });
+
+  // Fills client-side state with freshly processed, treated and normalized backend database records on load
+  useEffect(() => {
+    const fetchLatestData = async () => {
+      try {
+        const res = await fetch('/api/establishments');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setEstablishments(data);
+          }
+        }
+      } catch (err) {
+        console.error('[App] Failed to load establishments from treatment engine:', err);
+      }
+    };
+    fetchLatestData();
+  }, []);
 
   // Available States for Filter Dropdown
   const availableStates = Array.from(new Set(establishments.map(e => e.state))).sort() as string[];
@@ -1067,7 +1113,31 @@ export default function App() {
                       : 'text-earth-dark/70 hover:text-terracotta'
                   }`}
                 >
-                  Mapa Nacional
+                  Mapa
+                </button>
+
+                <button
+                  id="nav-tab-btn-atelies"
+                  onClick={() => setActiveTab('atelies')}
+                  className={`pb-1 transition-all cursor-pointer ${
+                    activeTab === 'atelies' 
+                      ? 'text-terracotta border-b-2 border-terracotta' 
+                      : 'text-earth-dark/70 hover:text-terracotta'
+                  }`}
+                >
+                  Ateliês
+                </button>
+
+                <button
+                  id="nav-tab-btn-fornecedores"
+                  onClick={() => setActiveTab('fornecedores')}
+                  className={`pb-1 transition-all cursor-pointer ${
+                    activeTab === 'fornecedores' 
+                      ? 'text-terracotta border-b-2 border-terracotta' 
+                      : 'text-earth-dark/70 hover:text-terracotta'
+                  }`}
+                >
+                  Fornecedores
                 </button>
                 
                 <button
@@ -1079,55 +1149,24 @@ export default function App() {
                       : 'text-earth-dark/70 hover:text-terracotta'
                   }`}
                 >
-                  Agenda & Eventos
+                  Agenda
                 </button>
 
                 <button
-                  id="nav-tab-btn-store"
-                  onClick={() => setActiveTab('store')}
+                  id="nav-tab-btn-sobre"
+                  onClick={() => setActiveTab('sobre')}
                   className={`pb-1 transition-all cursor-pointer ${
-                    activeTab === 'store' 
+                    activeTab === 'sobre' 
                       ? 'text-terracotta border-b-2 border-terracotta' 
                       : 'text-earth-dark/70 hover:text-terracotta'
                   }`}
                 >
-                  Insumos & Fornecedores
-                </button>
-
-                <button
-                  id="nav-tab-btn-cadastro"
-                  onClick={() => setActiveTab('cadastro')}
-                  className={`pb-1 transition-all cursor-pointer ${
-                    activeTab === 'cadastro' 
-                      ? 'text-terracotta border-b-2 border-terracotta' 
-                      : 'text-earth-dark/70 hover:text-terracotta'
-                  }`}
-                >
-                  Cadastrar Estabelecimento
-                </button>
-
-                <button
-                  id="nav-tab-btn-auth"
-                  onClick={() => setActiveTab('auth')}
-                  className={`pb-1 transition-all cursor-pointer ${
-                    activeTab === 'auth' 
-                      ? 'text-terracotta border-b-2 border-terracotta font-extrabold' 
-                      : 'text-earth-dark/70 hover:text-terracotta'
-                  }`}
-                >
-                  {currentSession ? 'Minha Conta' : 'Acesso / Entrar'}
+                  Sobre
                 </button>
               </nav>
 
-              {/* Session Badging */}
+              {/* Mobile Menu Trigger */}
               <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setActiveTab('auth')}
-                  className="hidden sm:inline font-mono text-[9px] text-sienna bg-sand-bg border border-sand-border px-2.5 py-1 rounded-md font-bold hover:bg-sand-border/30 transition-all cursor-pointer"
-                >
-                  {currentSession ? `${currentSession.email} (${currentSession.role.toUpperCase()})` : 'VISITANTE'}
-                </button>
-
                 <button 
                   onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                   className="lg:hidden p-2 rounded-xl border border-clay-border text-earth-dark hover:bg-sand-bg cursor-pointer transition-all"
@@ -1152,31 +1191,31 @@ export default function App() {
                   onClick={() => { setActiveTab('mapa'); setMobileMenuOpen(false); }}
                   className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'mapa' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
                 >
-                  Mapa Nacional
+                  Mapa
+                </button>
+                <button
+                  onClick={() => { setActiveTab('atelies'); setMobileMenuOpen(false); }}
+                  className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'atelies' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
+                >
+                  Ateliês
+                </button>
+                <button
+                  onClick={() => { setActiveTab('fornecedores'); setMobileMenuOpen(false); }}
+                  className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'fornecedores' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
+                >
+                  Fornecedores
                 </button>
                 <button
                   onClick={() => { setActiveTab('agenda'); setMobileMenuOpen(false); }}
                   className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'agenda' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
                 >
-                  Agenda & Cursos
+                  Agenda
                 </button>
                 <button
-                  onClick={() => { setActiveTab('store'); setMobileMenuOpen(false); }}
-                  className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'store' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
+                  onClick={() => { setActiveTab('sobre'); setMobileMenuOpen(false); }}
+                  className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'sobre' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
                 >
-                  Insumos & Loja
-                </button>
-                <button
-                  onClick={() => { setActiveTab('cadastro'); setMobileMenuOpen(false); }}
-                  className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'cadastro' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
-                >
-                  Cadastrar Estabelecimento
-                </button>
-                <button
-                  onClick={() => { setActiveTab('auth'); setMobileMenuOpen(false); }}
-                  className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'auth' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
-                >
-                  {currentSession ? 'Minha Conta' : 'Acesso / Entrar'}
+                  Sobre
                 </button>
               </motion.div>
             )}
@@ -1258,12 +1297,150 @@ export default function App() {
               </div>
             )}
 
-            {activeTab === 'cadastro' && (
-              <RegistrationForm 
-                onAddFormSubmission={handleAddFormSubmission}
-                onAddSuggestedSpace={handleAddSuggestedSpace}
-                onSuccess={() => {}}
-              />
+            {activeTab === 'atelies' && (
+              <div className="space-y-6 py-4 animate-fadeIn">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-clay-border pb-5">
+                  <div>
+                    <h2 className="text-2xl font-serif italic font-bold text-earth-dark">Ateliês de Cerâmica</h2>
+                    <p className="text-xs text-earth-gray">Explore os ateliês de cerâmica autoral, escolas e artistas catalogados.</p>
+                  </div>
+                  <div className="relative">
+                    <input 
+                      type="text"
+                      placeholder="Buscar por nome, cidade ou especialidade..."
+                      value={ateliesSearch}
+                      onChange={(e) => setAteliesSearch(e.target.value)}
+                      className="w-full md:w-80 px-4 py-2.5 bg-white border-2 border-clay-border rounded-xl text-xs focus:border-terracotta focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {filteredAteliesList.length === 0 ? (
+                  <div className="text-center py-12 bg-white rounded-2xl border border-clay-border p-8">
+                    <p className="text-sm text-earth-gray">Nenhum ateliê encontrado para a busca realizada.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {filteredAteliesList.map(est => (
+                      <div key={est.id} className="bg-white rounded-2xl border-2 border-clay-border hover:border-terracotta p-5 flex flex-col justify-between shadow-sm transition-all">
+                        <div className="space-y-3">
+                          <div className="aspect-video w-full rounded-xl overflow-hidden bg-sand-bg border border-clay-border">
+                            <img src={est.photo} alt={est.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          </div>
+                          <div>
+                            <span className="text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-sand-card text-terracotta">
+                              {est.category}
+                            </span>
+                            <h3 className="text-lg font-serif italic font-bold text-earth-dark mt-1 leading-tight">{est.name}</h3>
+                            <p className="text-xs text-earth-gray flex items-center gap-1 mt-1">
+                              <MapPin className="w-3.5 h-3.5 text-terracotta" />
+                              {est.city} - {est.state} {est.neighborhood ? `(${est.neighborhood})` : ''}
+                            </p>
+                          </div>
+                          <p className="text-xs text-gray-600 line-clamp-3 leading-relaxed">{est.description}</p>
+                          <div className="flex flex-wrap gap-1">
+                            {est.specialties.slice(0, 3).map(s => (
+                              <span key={s} className="px-2 py-0.5 rounded bg-gray-50 border border-gray-100 text-[10px] text-gray-600">
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="mt-5 pt-4 border-t border-clay-border/40 flex items-center justify-between gap-3">
+                          <span className="text-[10px] font-mono text-earth-gray font-bold uppercase tracking-wider">
+                            Cadastro Colaborativo
+                          </span>
+                          <button 
+                            onClick={() => {
+                              setSelectedId(est.id);
+                              setCenterCoordinates(est.coordinates);
+                              setActiveTab('mapa');
+                              setIsProfileDrawerOpen(true);
+                            }}
+                            className="px-4 py-2 bg-terracotta hover:bg-sienna text-white text-xs font-bold rounded-xl transition-all shadow-sm uppercase tracking-wider cursor-pointer"
+                          >
+                            Ver no Mapa
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'fornecedores' && (
+              <div className="space-y-6 py-4 animate-fadeIn">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-clay-border pb-5">
+                  <div>
+                    <h2 className="text-2xl font-serif italic font-bold text-earth-dark">Fornecedores de Insumos</h2>
+                    <p className="text-xs text-earth-gray">Encontre lojas de argilas, esmaltes, ferramentas, fornos e serviços cerâmicos.</p>
+                  </div>
+                  <div className="relative">
+                    <input 
+                      type="text"
+                      placeholder="Buscar por nome, cidade ou especialidade..."
+                      value={fornecedoresSearch}
+                      onChange={(e) => setFornecedoresSearch(e.target.value)}
+                      className="w-full md:w-80 px-4 py-2.5 bg-white border-2 border-clay-border rounded-xl text-xs focus:border-terracotta focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {filteredFornecedoresList.length === 0 ? (
+                  <div className="text-center py-12 bg-white rounded-2xl border border-clay-border p-8">
+                    <p className="text-sm text-earth-gray">Nenhum fornecedor encontrado para a busca realizada.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {filteredFornecedoresList.map(est => (
+                      <div key={est.id} className="bg-white rounded-2xl border-2 border-clay-border hover:border-terracotta p-5 flex flex-col justify-between shadow-sm transition-all">
+                        <div className="space-y-3">
+                          <div className="aspect-video w-full rounded-xl overflow-hidden bg-sand-bg border border-clay-border">
+                            <img src={est.photo} alt={est.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          </div>
+                          <div>
+                            <span className="text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-sand-card text-terracotta">
+                              {est.category}
+                            </span>
+                            <h3 className="text-lg font-serif italic font-bold text-earth-dark mt-1 leading-tight">{est.name}</h3>
+                            <p className="text-xs text-earth-gray flex items-center gap-1 mt-1">
+                              <MapPin className="w-3.5 h-3.5 text-terracotta" />
+                              {est.city} - {est.state} {est.neighborhood ? `(${est.neighborhood})` : ''}
+                            </p>
+                          </div>
+                          <p className="text-xs text-gray-600 line-clamp-3 leading-relaxed">{est.description}</p>
+                          <div className="flex flex-wrap gap-1">
+                            {est.specialties.slice(0, 3).map(s => (
+                              <span key={s} className="px-2 py-0.5 rounded bg-gray-50 border border-gray-100 text-[10px] text-gray-600">
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="mt-5 pt-4 border-t border-clay-border/40 flex items-center justify-between gap-3">
+                          <span className="text-[10px] font-mono text-earth-gray font-bold uppercase tracking-wider">
+                            Fornecedor Homologado
+                          </span>
+                          <button 
+                            onClick={() => {
+                              setSelectedId(est.id);
+                              setCenterCoordinates(est.coordinates);
+                              setActiveTab('mapa');
+                              setIsProfileDrawerOpen(true);
+                            }}
+                            className="px-4 py-2 bg-terracotta hover:bg-sienna text-white text-xs font-bold rounded-xl transition-all shadow-sm uppercase tracking-wider cursor-pointer"
+                          >
+                            Ver no Mapa
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
 
             {activeTab === 'agenda' && (
@@ -1277,31 +1454,66 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'store' && (
-              <FutureMarketplace />
-            )}
+            {activeTab === 'sobre' && (
+              <div className="max-w-3xl mx-auto py-8 px-4 space-y-8 animate-fadeIn text-earth-dark font-sans">
+                <div className="text-center space-y-3">
+                  <div className="w-16 h-16 rounded-full bg-terracotta flex items-center justify-center shadow-md mx-auto">
+                    <Flame className="w-8 h-8 text-white" />
+                  </div>
+                  <h2 className="text-3xl font-serif italic font-bold">Cartografia da Cerâmica</h2>
+                  <p className="text-sm font-medium text-terracotta tracking-wider uppercase">O Grande Mapa Colaborativo da Cerâmica Brasileira</p>
+                </div>
 
-            {activeTab === 'auth' && (
-              <div className="max-w-xl mx-auto py-8 w-full">
-                <AuthModule 
-                  currentSession={currentSession}
-                  onLogin={(session) => {
-                    setCurrentSession(session);
-                    handleAddAuditLog('Autenticação Realizada', `Usuário ${session.name} entrou com sucesso.`);
-                    if (['super_admin', 'admin', 'moderator', 'coordinator'].includes(session.role)) {
-                      changePortal('admin');
-                    } else {
-                      changePortal('partner');
-                    }
-                  }}
-                  onLogout={() => {
-                    setCurrentSession(null);
-                    handleAddAuditLog('Logout Realizado', 'Sessão finalizada pelo usuário.');
-                    setActiveTab('mapa');
-                  }}
-                  onUpdateSession={setCurrentSession}
-                  onAddAuditLog={handleAddAuditLog}
-                />
+                <div className="bg-white rounded-2xl border-2 border-clay-border p-6 md:p-8 space-y-6 shadow-sm leading-relaxed text-sm">
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-serif italic font-bold border-b border-clay-border pb-2">Sobre o Projeto</h3>
+                    <p>
+                      A <strong>Cartografia da Cerâmica</strong> nasceu com o propósito de mapear, integrar e dar visibilidade aos espaços dedicados à cerâmica autoral em todo o Brasil. Somos um guia vivo e colaborativo focado na simplificação do acesso a ateliês, ceramistas, professores e fornecedores de insumos.
+                    </p>
+                    <p>
+                      Neste modelo MVP, focamos na máxima estabilidade e transparência: todo o conteúdo exibido no mapa é atualizado e sincronizado automaticamente a partir do formulário de cadastro do Google Forms, sem barreiras de login, moderações lentas ou complexidades operacionais.
+                    </p>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-serif italic font-bold border-b border-clay-border pb-2">Sincronização e Tratamento de Dados</h3>
+                    <p>
+                      Nosso sistema possui uma <strong>Camada Dedicada de Tratamento de Dados</strong> que limpa, normaliza e geocodifica os registros inseridos:
+                    </p>
+                    <ul className="list-disc pl-5 space-y-2 text-gray-700">
+                      <li><strong>Validação de Entrada:</strong> Importamos exclusivamente cadastros de quem optou por divulgar seu espaço.</li>
+                      <li><strong>Segurança e Privacidade:</strong> Endereços residenciais exatos nunca são expostos no mapa. Os marcadores de localização são posicionados nos bairros correspondentes ou nos centros das cidades para preservar a privacidade de cada ceramista.</li>
+                      <li><strong>Padronização Geográfica:</strong> Tratamos inconsistências em nomes de cidades e estados para garantir que todos os marcadores apareçam com precisão matemática.</li>
+                      <li><strong>Regra Distrito Federal:</strong> Possuímos uma lógica geográfica exclusiva para o Distrito Federal que interpreta as Regiões Administrativas (RAs) diretamente da planilha, garantindo que nenhum espaço do DF fique invisível ou fora do mapa.</li>
+                      <li><strong>Deduplicação Inteligente:</strong> Eliminamos automaticamente registros duplicados, mantendo as informações atualizadas e coesas.</li>
+                    </ul>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-serif italic font-bold border-b border-clay-border pb-2">Como participo?</h3>
+                    <p>
+                      Para cadastrar o seu espaço, basta preencher o formulário oficial da Cartografia da Cerâmica. Assim que o registro for inserido, nosso sincronizador em segundo plano processará e ativará seu marcador no mapa nacional em instantes!
+                    </p>
+                    <div className="pt-2 flex flex-col sm:flex-row gap-3">
+                      <button 
+                        onClick={() => {
+                          window.open('https://docs.google.com/spreadsheets/d/1mUr3cwLDMe5DIufp2n5zH8S3955Z58A6lJqq1o0ULYs/edit', '_blank');
+                        }}
+                        className="px-6 py-3 bg-terracotta hover:bg-sienna text-white text-xs font-bold rounded-xl transition-all shadow-md uppercase tracking-wider cursor-pointer"
+                      >
+                        Acessar Planilha de Registro
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setActiveTab('mapa');
+                        }}
+                        className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-bold rounded-xl transition-all uppercase tracking-wider cursor-pointer border border-gray-200"
+                      >
+                        Voltar para o Mapa
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </main>

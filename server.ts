@@ -8,11 +8,301 @@ import {
   INITIAL_ESTABLISHMENTS, MOCK_SHEETS_DATA, INITIAL_SYNC_LOGS, DEFAULT_PLANS, INITIAL_SUGGESTED_SPACES, DEFAULT_INTEGRATION_CONFIG 
 } from './src/data';
 import { 
-  EstablishmentWithHomologation, SyncRow, SyncLog, PlanConfig, SuggestedSpace, IntegrationConfig, UserSession, AuditLog, TeamMember 
+  EstablishmentWithHomologation, SyncRow, SyncLog, PlanConfig, SuggestedSpace, IntegrationConfig, UserSession, AuditLog, TeamMember, Category
 } from './src/types';
 
 const PORT = 3000;
 const DB_FILE = path.join(process.cwd(), 'server_db.json');
+
+// --- GEOLOCATION DATABASES & HELPERS ---
+const GEOCONTEXT_DB_LOCAL: Record<string, [number, number]> = {
+  'são paulo, são paulo': [-23.55052, -46.633308],
+  'são paulo': [-23.55052, -46.633308],
+  'cunha, são paulo': [-22.9284, -44.8719],
+  'porto ferreira, são paulo': [-21.8547, -47.4786],
+  'distrito federal': [-15.7801, -47.9292],
+  'minas novas, minas gerais': [-17.2185, -42.5912],
+  'porto alegre, rio grande do sul': [-30.0346, -51.2177],
+  'soure, pará': [-0.7188, -48.5135],
+  'salvador, bahia': [-12.9714, -38.5014],
+  'tiradentes, minas gerais': [-21.1107, -44.1784],
+  'paraty, rio de janeiro': [-23.2178, -44.7131],
+  'curitiba, paraná': [-25.4284, -49.2733],
+  'florianópolis, santa catarina': [-27.5954, -48.5480],
+  'fortaleza, ceará': [-3.7172, -38.5284],
+  'belo horizonte, minas gerais': [-19.9173, -43.9345],
+  'rio de janeiro, rio de janeiro': [-22.9068, -43.1729]
+};
+
+const STATE_CENTERS_LOCAL: Record<string, [number, number]> = {
+  'Distrito Federal': [-15.7801, -47.9292],
+  'São Paulo': [-23.5505, -46.6333],
+  'Rio de Janeiro': [-22.9068, -43.1729],
+  'Minas Gerais': [-19.9173, -43.9345],
+  'Rio Grande do Sul': [-30.0346, -51.2177],
+  'Pará': [-1.4558, -48.4902],
+  'Bahia': [-12.9714, -38.5014],
+  'Ceará': [-3.7172, -38.5284],
+  'Pernambuco': [-8.05428, -34.8813],
+  'Paraná': [-25.4284, -49.2733],
+  'Santa Catarina': [-27.5954, -48.5480],
+  'Goiás': [-16.6869, -49.2648],
+};
+
+const DF_RA_COORDINATES: Record<string, [number, number]> = {
+  'Plano Piloto': [-15.7938, -47.8828],
+  'Asa Norte': [-15.7635, -47.8858],
+  'Asa Sul': [-15.8119, -47.8988],
+  'Lago Sul': [-15.8385, -47.8542],
+  'Lago Norte': [-15.7335, -47.8423],
+  'Jardim Botânico': [-15.8902, -47.7885],
+  'Cruzeiro': [-15.7900, -47.9400],
+  'Sudoeste': [-15.7985, -47.9250],
+  'Octogonal': [-15.7985, -47.9250],
+  'Guará': [-15.8143, -47.9806],
+  'Águas Claras': [-15.8398, -48.0264],
+  'Taguatinga': [-15.8336, -48.0569],
+  'Ceilândia': [-15.8170, -48.1160],
+  'Samambaia': [-15.8770, -48.0860],
+  'Sobradinho': [-15.6515, -47.7915],
+  'Sobradinho II': [-15.6315, -47.7915],
+  'Planaltina': [-15.6180, -47.6600],
+  'Paranoá': [-15.7720, -47.7780],
+  'São Sebastião': [-15.9030, -47.7730],
+  'Park Way': [-15.8820, -47.9650],
+  'Vicente Pires': [-15.8080, -48.0260],
+  'Arniqueira': [-15.8650, -48.0250],
+  'Núcleo Bandeirante': [-15.8730, -47.9690],
+  'Riacho Fundo': [-15.8810, -48.0160],
+  'Riacho Fundo II': [-15.8950, -48.0430],
+  'Candangolândia': [-15.8580, -47.9500],
+  'Varjão': [-15.7310, -47.8760],
+  'Fercal': [-15.5920, -47.8680],
+  'SCIA': [-15.7830, -47.9800],
+  'SIA': [-15.7920, -47.9540],
+  'Itapoã': [-15.7480, -47.7420],
+  'Sol Nascente': [-15.8230, -48.1390],
+  'Pôr do Sol': [-15.8330, -48.1390],
+  'Água Quente': [-15.9910, -48.1110],
+  'Arapoanga': [-15.6020, -47.6980],
+};
+
+function parseCSV(text: string): string[][] {
+  const lines: string[][] = [];
+  let row: string[] = [];
+  let inQuotes = false;
+  let cell = '';
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const nextChar = text[i + 1];
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (nextChar === '"') {
+          cell += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cell += char;
+      }
+    } else {
+      if (char === '"') {
+        inQuotes = true;
+      } else if (char === ',') {
+        row.push(cell.trim());
+        cell = '';
+      } else if (char === '\n' || char === '\r') {
+        if (char === '\r' && nextChar === '\n') {
+          i++;
+        }
+        row.push(cell.trim());
+        lines.push(row);
+        row = [];
+        cell = '';
+      } else {
+        cell += char;
+      }
+    }
+  }
+
+  if (cell || row.length > 0) {
+    row.push(cell.trim());
+    lines.push(row);
+  }
+
+  return lines.filter(r => r.length > 0 && r.some(c => c !== ''));
+}
+
+function titleCase(str: string): string {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .map(w => {
+      if (['de', 'do', 'da', 'e', 'o', 'em'].includes(w)) return w;
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    })
+    .join(' ');
+}
+
+function parseLocationText(raw: string): { city: string; state: string; neighborhood: string } {
+  const str = (raw || '').trim();
+  let city = 'São Paulo';
+  let state = 'SP';
+  let neighborhood = 'Centro';
+
+  if (!str) return { city, state, neighborhood };
+
+  const parts = str.split(/[-.,|]/).map(p => p.trim()).filter(Boolean);
+
+  const stateMap: Record<string, string> = {
+    'sao paulo': 'SP', 'são paulo': 'SP', 'sp': 'SP',
+    'rio de janeiro': 'RJ', 'rj': 'RJ',
+    'minas gerais': 'MG', 'mg': 'MG',
+    'bahia': 'BA', 'ba': 'BA',
+    'rio grande do sul': 'RS', 'rs': 'RS',
+    'pernambuco': 'PE', 'pe': 'PE',
+    'parana': 'PR', 'paraná': 'PR', 'pr': 'PR',
+    'santa catarina': 'SC', 'sc': 'SC',
+    'espirito santo': 'ES', 'espírito santo': 'ES', 'es': 'ES',
+    'ceara': 'CE', 'ceará': 'CE', 'ce': 'CE',
+    'goias': 'GO', 'goiás': 'GO', 'go': 'GO',
+    'distrito federal': 'DF', 'df': 'DF',
+    'para': 'PA', 'pará': 'PA', 'pa': 'PA',
+    'alagoas': 'AL', 'al': 'AL',
+    'amazonas': 'AM', 'am': 'AM',
+    'paraiba': 'PB', 'paraíba': 'PB', 'pb': 'PB',
+    'rio grande do norte': 'RN', 'rn': 'RN',
+    'sergipe': 'SE', 'se': 'SE',
+    'maranhao': 'MA', 'maranhão': 'MA', 'ma': 'MA',
+    'piaui': 'PI', 'piauí': 'PI', 'pi': 'PI',
+    'tocantins': 'TO', 'to': 'TO',
+    'mato grosso': 'MT', 'mt': 'MT',
+    'mato grosso do sul': 'MS', 'ms': 'MS',
+    'rondonia': 'RO', 'rondônia': 'RO', 'ro': 'RO',
+    'acre': 'AC', 'ac': 'AC',
+    'amapa': 'AP', 'amapá': 'AP', 'ap': 'AP',
+    'roraima': 'RR', 'rr': 'RR'
+  };
+
+  if (parts.length > 0) {
+    let foundState = '';
+    let foundCity = '';
+    let foundNeighborhood = '';
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const partLower = part.toLowerCase();
+
+      if (stateMap[partLower]) {
+        foundState = stateMap[partLower];
+      } else if (partLower.length === 2 && /^[a-z]{2}$/i.test(partLower)) {
+        foundState = partLower.toUpperCase();
+      } else if (partLower.includes('bairro') || partLower === 'centro' || (i === parts.length - 1 && parts.length > 2)) {
+        foundNeighborhood = part.replace(/^bairro\s+/i, '');
+      } else {
+        if (!foundCity) {
+          foundCity = part;
+        } else if (!foundNeighborhood) {
+          foundNeighborhood = part;
+        }
+      }
+    }
+
+    if (foundCity) city = foundCity;
+    if (foundState) state = foundState;
+    if (foundNeighborhood) neighborhood = foundNeighborhood;
+
+    if (!foundState) {
+      for (const [key, val] of Object.entries(stateMap)) {
+        if (str.toLowerCase().includes(key)) {
+          state = val;
+          break;
+        }
+      }
+    }
+  }
+
+  return { city, state, neighborhood };
+}
+
+function normalizeStateName(state: string): string {
+  const s = state.trim().toLowerCase();
+  if (['df', 'distrito federal', 'distrito fed.', 'federal district', 'brasília-df', 'brasilia-df', 'brasília df'].includes(s)) {
+    return 'Distrito Federal';
+  }
+  if (['sp', 'são paulo', 'sao paulo', 's. paulo', 'estado de são paulo'].includes(s)) {
+    return 'São Paulo';
+  }
+  if (['rj', 'rio de janeiro', 'rio', 'estado do rio de janeiro'].includes(s)) {
+    return 'Rio de Janeiro';
+  }
+  if (['mg', 'minas gerais', 'minas', 'estado de minas gerais'].includes(s)) {
+    return 'Minas Gerais';
+  }
+  if (['rs', 'rio grande do sul', 'rg do sul', 'rio grande sul'].includes(s)) {
+    return 'Rio Grande do Sul';
+  }
+  if (['pa', 'pará', 'para', 'estado do pará'].includes(s)) {
+    return 'Pará';
+  }
+  if (['ba', 'bahia', 'ba'].includes(s)) {
+    return 'Bahia';
+  }
+  if (['ce', 'ceará', 'ceara', 'ce'].includes(s)) {
+    return 'Ceará';
+  }
+  if (['pr', 'paraná', 'parana', 'pr'].includes(s)) {
+    return 'Paraná';
+  }
+  if (['sc', 'santa catarina', 'sc'].includes(s)) {
+    return 'Santa Catarina';
+  }
+  if (['pe', 'pernambuco', 'pe'].includes(s)) {
+    return 'Pernambuco';
+  }
+  if (['go', 'goiás', 'goias', 'go'].includes(s)) {
+    return 'Goiás';
+  }
+
+  if (state.length === 2) {
+    return state.toUpperCase();
+  }
+  return state.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+}
+
+function detectDFRegiaoAdministrativa(address: string): string | null {
+  const fullText = address.toLowerCase();
+  const DF_REGIOES_ADMINISTRATIVAS = [
+    'Plano Piloto', 'Asa Norte', 'Asa Sul', 'Lago Sul', 'Lago Norte', 'Jardim Botânico',
+    'Cruzeiro', 'Sudoeste', 'Octogonal', 'Guará', 'Águas Claras', 'Taguatinga', 'Ceilândia',
+    'Samambaia', 'Sobradinho', 'Sobradinho II', 'Planaltina', 'Paranoá', 'São Sebastião',
+    'Park Way', 'Vicente Pires', 'Arniqueira', 'Núcleo Bandeirante', 'Riacho Fundo',
+    'Riacho Fundo II', 'Candangolândia', 'Varjão', 'Fercal', 'SCIA', 'SIA', 'Itapoã',
+    'Sol Nascente', 'Pôr do Sol', 'Água Quente', 'Arapoanga'
+  ];
+
+  for (const ra of DF_REGIOES_ADMINISTRATIVAS) {
+    if (fullText.includes(ra.toLowerCase())) {
+      return ra;
+    }
+  }
+
+  if (fullText.includes('asa sul') || fullText.includes('cls') || fullText.includes('sqs')) return 'Asa Sul';
+  if (fullText.includes('asa norte') || fullText.includes('cln') || fullText.includes('sqn')) return 'Asa Norte';
+  if (fullText.includes('lago sul') || fullText.includes('shis') || fullText.includes('qil')) return 'Lago Sul';
+  if (fullText.includes('lago norte') || fullText.includes('shin') || fullText.includes('qin')) return 'Lago Norte';
+  if (fullText.includes('sudoeste') || fullText.includes('ccsw') || fullText.includes('qmsw')) return 'Sudoeste';
+  if (fullText.includes('octogonal') || fullText.includes('aos')) return 'Octogonal';
+  if (fullText.includes('cruzeiro') || fullText.includes('shces')) return 'Cruzeiro';
+
+  return null;
+}
 
 // Interface for DB file
 interface ServerDatabase {
@@ -105,6 +395,192 @@ async function startServer() {
 
   // Load database
   const db = loadDatabase();
+
+  // --- AUTOMATIC GOOGLE SHEETS BACKGROUND SYNC ENG ---
+  async function syncWithGoogleSheetsInternal() {
+    const spreadsheetId = db.integrationConfig?.spreadsheetId || '1mUr3cwLDMe5DIufp2n5zH8S3955Z58A6lJqq1o0ULYs';
+    const sheetName = db.integrationConfig?.sheetName || 'Respostas do formulário 1';
+    console.log(`[AutoSync] Sincronizando planilha: ${spreadsheetId} - ${sheetName}`);
+
+    try {
+      const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.error(`[AutoSync] Erro HTTP ao buscar planilha: ${res.status}`);
+        return;
+      }
+      const csvText = await res.text();
+      const rows = parseCSV(csvText);
+      if (rows.length <= 1) {
+        console.log('[AutoSync] Planilha vazia ou apenas cabeçalhos.');
+        return;
+      }
+
+      const dataRows = rows.slice(1);
+      let imported = 0;
+      let duplicate = 0;
+      let ignored = 0;
+
+      for (let i = 0; i < dataRows.length; i++) {
+        const cols = dataRows[i];
+        if (cols.length < 5) continue;
+
+        const intent = (cols[2] || '').trim();
+        
+        // STRICT RULE: Only import "Divulgando meu espaço"
+        const isMySpace = intent.toLowerCase().includes('divulgando meu espaço') ||
+                          intent.toLowerCase().includes('divulgando minha empresa') ||
+                          intent.toLowerCase().includes('meu espaço');
+
+        if (!isMySpace) {
+          ignored++;
+          continue;
+        }
+
+        const nameRaw = (cols[4] || '').trim();
+        const locationRaw = (cols[6] || '').trim();
+        const instagramRaw = (cols[7] || '').trim();
+        const whatsappRaw = (cols[8] || '').trim();
+
+        // 1. DATA TREATMENT LAYER (CAMADA DE PROCESSAMENTO)
+        // Clean and Capitalize Name
+        let cleanName = nameRaw.replace(/\s+/g, ' ').trim();
+        cleanName = titleCase(cleanName);
+
+        // Parse location
+        const { city: cityRaw, state: stateRaw, neighborhood: neighborhoodRaw } = parseLocationText(locationRaw);
+        let cleanState = normalizeStateName(stateRaw);
+        let cleanCity = cleanState === 'Distrito Federal' ? 'Brasília' : titleCase(cityRaw.trim());
+        let cleanNeighborhood = titleCase(neighborhoodRaw.trim());
+
+        // Instagram and WhatsApp treatment
+        let cleanInstagram = instagramRaw.replace(/\s+/g, '').trim();
+        if (cleanInstagram && !cleanInstagram.startsWith('@')) {
+          cleanInstagram = '@' + cleanInstagram;
+        }
+        let cleanWhatsapp = whatsappRaw.replace(/\D/g, '').trim();
+
+        // 2. DEDUPLICATION (DEDUPLICAÇÃO)
+        const isDuplicate = db.establishments.some(e => {
+          const sameName = e.name.toLowerCase().replace(/\s+/g, '') === cleanName.toLowerCase().replace(/\s+/g, '');
+          const sameCity = e.city.toLowerCase().trim() === cleanCity.toLowerCase().trim();
+          const sameState = e.state.toLowerCase().trim() === cleanState.toLowerCase().trim();
+          const sameInsta = cleanInstagram && e.instagram && e.instagram.toLowerCase().trim() === cleanInstagram.toLowerCase().trim();
+          const samePhone = cleanWhatsapp && e.whatsapp && e.whatsapp.replace(/\D/g, '') === cleanWhatsapp;
+          
+          return (sameName && sameCity && sameState) || sameInsta || (sameName && samePhone);
+        });
+
+        if (isDuplicate) {
+          duplicate++;
+          continue;
+        }
+
+        // Determine Category (Sub-categoria inteligente baseada no nome e especialidades)
+        let detectedCategory: Category = 'Ateliê';
+        const specialtiesCol = [cols[10], cols[15], cols[20], cols[21]].filter(Boolean).join(', ').toLowerCase();
+        const textToSearch = `${cleanName} ${specialtiesCol}`.toLowerCase();
+        if (textToSearch.includes('fornecedor') || textToSearch.includes('loja') || textToSearch.includes('insumos') || textToSearch.includes('ferramentas') || textToSearch.includes('venda de argila')) {
+          detectedCategory = 'Fornecedor';
+        } else if (textToSearch.includes('escola') || textToSearch.includes('ateliê escola') || textToSearch.includes('curso')) {
+          detectedCategory = 'Ateliê Escola';
+        } else if (textToSearch.includes('professor') || textToSearch.includes('professora') || textToSearch.includes('instrutor')) {
+          detectedCategory = 'Professor';
+        } else if (textToSearch.includes('ceramista')) {
+          detectedCategory = 'Ceramista';
+        }
+
+        // 3. GEOCODING AND DF HANDLING (DISTRITO FEDERAL)
+        let coordinates: [number, number] = [-23.55052, -46.633308]; // fallback SP
+        let geocodingStatus: 'valid' | 'pending_review' | 'failed' = 'pending_review';
+
+        if (cleanState === 'Distrito Federal') {
+          const ra = detectDFRegiaoAdministrativa(locationRaw);
+          if (ra && DF_RA_COORDINATES[ra]) {
+            coordinates = DF_RA_COORDINATES[ra];
+            geocodingStatus = 'valid';
+            cleanNeighborhood = ra;
+          } else {
+            coordinates = [-15.7801, -47.9292]; // Geographic Center of DF
+            geocodingStatus = 'valid';
+          }
+        } else {
+          const searchQuery = `${cleanCity}, ${cleanState}`.toLowerCase();
+          if (GEOCONTEXT_DB_LOCAL[searchQuery]) {
+            coordinates = GEOCONTEXT_DB_LOCAL[searchQuery];
+            geocodingStatus = 'valid';
+          } else if (STATE_CENTERS_LOCAL[cleanState]) {
+            coordinates = STATE_CENTERS_LOCAL[cleanState];
+            geocodingStatus = 'valid';
+          }
+        }
+
+        const cleanSpecialtiesVal = specialtiesCol
+          ? specialtiesCol.split(',').map(s => s.trim()).filter(Boolean)
+          : ['Modelagem Manual', 'Alta Temperatura'];
+
+        // Add to establishments (Ensure Homologado / Perfil Oficial and Origin: Google Forms)
+        const newEst: EstablishmentWithHomologation = {
+          id: `est_auto_${Date.now()}_${i}_${Math.floor(Math.random() * 1000)}`,
+          name: cleanName,
+          category: detectedCategory,
+          specialties: cleanSpecialtiesVal as any,
+          services: [],
+          privacy: 'neighborhood', // default privacy neighborhood for safety
+          address: 'Consulte as redes sociais',
+          neighborhood: cleanNeighborhood || 'Centro',
+          city: cleanCity,
+          state: cleanState,
+          coordinates,
+          geocodingStatus,
+          originalAddress: locationRaw || 'Não informado',
+          description: `Espaço de cerâmica integrado colaborativamente. Localizado em ${cleanCity} - ${cleanState}.`,
+          instagram: cleanInstagram,
+          whatsapp: cleanWhatsapp,
+          photo: 'https://images.unsplash.com/photo-1565192647048-f997ded879f9?auto=format&fit=crop&w=800&q=80',
+          isPremium: false,
+          claimed: false,
+          rating: 4.8,
+          reviewsCount: 0,
+          homologationStatus: 'Perfil Oficial',
+          origin: 'Google Forms',
+          team: []
+        };
+
+        db.establishments.unshift(newEst);
+        imported++;
+      }
+
+      if (imported > 0) {
+        saveDatabase(db);
+        console.log(`[AutoSync] Sincronização automática realizada com sucesso: ${imported} registros importados.`);
+        
+        const logMsg = `Sincronização Automática Realizada: ${imported} novos registros do formulário adicionados ao mapa.`;
+        const nextLog: SyncLog = {
+          id: `log_${Date.now()}`,
+          timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+          action: logMsg,
+          recordsSynced: imported,
+          recordsIgnored: duplicate,
+          operator: 'Sincronizador Automático'
+        };
+        db.syncLogs.unshift(nextLog);
+        saveDatabase(db);
+      }
+    } catch (err) {
+      console.error('[AutoSync] Erro na sincronização automática:', err);
+    }
+  }
+
+  // Trigger startup sync
+  setTimeout(() => {
+    syncWithGoogleSheetsInternal().catch(err => console.error('Error on startup sync:', err));
+  }, 1000);
+
+  // Sync every 30 seconds
+  setInterval(() => {
+    syncWithGoogleSheetsInternal().catch(err => console.error('Error in periodic sync:', err));
+  }, 30000);
 
   // Helper to append audit logs
   function logAction(
@@ -825,141 +1301,16 @@ async function startServer() {
     res.json({ success: true, row: nextRow });
   });
 
-  // Sync Google Sheets Rows with Establishments (Admin Only, Filter by "Divulgando minha empresa")
-  app.post('/api/sync-sheets', (req, res) => {
-    const session = getSession(req);
-    const { fetchedRows, isBackground } = req.body;
-
-    if (!isBackground && (!session || session.email.toLowerCase() !== 'samirarabello.backup@gmail.com')) {
-      res.status(403).json({ error: 'Permissão de moderador/administrador necessária para sincronização.' });
-      return;
+  // Sync Google Sheets Rows with Establishments (Triggered on demand, no login/admin auth required for MVP)
+  app.post('/api/sync-sheets', async (req, res) => {
+    try {
+      console.log('[API] Chamada manual de sincronização de planilha recebida.');
+      await syncWithGoogleSheetsInternal();
+      res.json({ success: true, message: 'Sincronização processada com sucesso via Camada de Tratamento de Dados.' });
+    } catch (err: any) {
+      console.error('[API] Erro na sincronização manual:', err);
+      res.status(500).json({ error: 'Erro ao processar sincronização.', details: err.message });
     }
-
-    if (!fetchedRows || fetchedRows.length === 0) {
-      res.json({ success: true, imported: 0, ignored: 0 });
-      return;
-    }
-
-    let newlyImportedCount = 0;
-    let duplicatesCount = 0;
-    let filteredCount = 0;
-
-    for (const row of fetchedRows) {
-      // MANDATORY CRITICAL SECURITY: Only import rows with Category: "Divulgando minha empresa"
-      // Wait, is row.category a description on Sheets, or category of intent?
-      // Yes, "Divulgando minha empresa" vs "Indicando um estabelecimento".
-      // Let's check row.category or row.intent or custom category indicator. Let's make sure it checks both or row.category!
-      // In the mock sheets, let's see how category is represented or we check row.category === 'Divulgando minha empresa'
-      const rowCategory = String(row.category || '');
-      const isMyCompany = rowCategory.includes('Divulgando minha empresa') || row.category === 'Divulgando minha empresa';
-      const isSuggest = rowCategory.includes('Indicando um estabelecimento') || row.category === 'Indicando um estabelecimento';
-
-      if (!isMyCompany) {
-        // If it is 'Indicando um estabelecimento', do NOT import automatically.
-        // Keep it only as suggested spaces or ignore from automatic import.
-        if (isSuggest) {
-          filteredCount++;
-          // Append to suggestedSpaces list so it stays as suggestion for future homologation!
-          const existsInSuggested = db.suggestedSpaces.some(s => s.name.toLowerCase() === row.name.toLowerCase() && s.city.toLowerCase() === row.city.toLowerCase());
-          if (!existsInSuggested) {
-            db.suggestedSpaces.push({
-              id: `sug_imported_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-              name: row.name,
-              category: 'Ateliê', // Default suggested category
-              city: row.city || 'Desconhecida',
-              state: row.state || 'SP',
-              neighborhood: row.neighborhood || '',
-              contact: row.contact || '',
-              specialties: row.specialties || '',
-              suggestedBy: 'Sincronizador (Indicação de Terceiro)',
-              date: new Date().toISOString().replace('T', ' ').substring(0, 16),
-              invitedStatus: 'pending'
-            });
-          }
-        }
-        continue;
-      }
-
-      // Check if already exists in establishments list
-      const existsInEst = db.establishments.some(
-        e => e.name.toLowerCase().trim() === row.name.toLowerCase().trim() ||
-             (e.city.toLowerCase().trim() === row.city.toLowerCase().trim() && 
-              e.instagram?.toLowerCase().trim() === row.contact.toLowerCase().trim())
-      );
-
-      const existingSheetRowIndex = db.sheetRows.findIndex(
-        sr => sr.name.toLowerCase().trim() === row.name.toLowerCase().trim() &&
-              sr.city.toLowerCase().trim() === row.city.toLowerCase().trim()
-      );
-
-      if (existsInEst) {
-        duplicatesCount++;
-        if (existingSheetRowIndex >= 0) {
-          db.sheetRows[existingSheetRowIndex].status = 'duplicate';
-        }
-        continue;
-      }
-
-      // Successful import
-      const nextEst: EstablishmentWithHomologation = {
-        id: `est_imported_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
-        name: row.name,
-        category: 'Ateliê', // Seed category cleanly
-        specialties: (row.specialties || '').split(', ').map((s: string) => s.trim()).filter(Boolean),
-        services: [],
-        privacy: row.privacy || 'neighborhood',
-        address: row.address || '',
-        neighborhood: row.neighborhood || '',
-        city: row.city || '',
-        state: row.state || '',
-        coordinates: [-23.55052, -46.633308], // Seed default coordinates
-        geocodingStatus: 'pending_review',
-        originalAddress: row.address || 'Consulte as redes sociais',
-        description: row.description || `Perfil importado do Guia Colaborativo. Localizado em ${row.city} - ${row.state}.`,
-        instagram: row.contact.startsWith('@') ? row.contact : `@${row.contact}`,
-        whatsapp: row.contact.replace(/\D/g, '') || '',
-        photo: 'https://images.unsplash.com/photo-1565192647048-f997ded879f9?auto=format&fit=crop&w=800&q=80',
-        isPremium: false,
-        claimed: false,
-        rating: 4.8,
-        reviewsCount: 0,
-        homologationStatus: 'Perfil Importado', // Set to Perfil Importado
-        origin: 'Google Forms',
-        team: []
-      };
-
-      db.establishments.unshift(nextEst);
-      newlyImportedCount++;
-
-      if (existingSheetRowIndex >= 0) {
-        db.sheetRows[existingSheetRowIndex].status = 'synced';
-      } else {
-        db.sheetRows.push({
-          ...row,
-          status: 'synced'
-        });
-      }
-    }
-
-    saveDatabase(db);
-
-    const logMsg = isBackground
-      ? `Sincronização Automática (Sheets): ${newlyImportedCount} importados, ${duplicatesCount} ignorados, ${filteredCount} indicações mantidas como sugestões.`
-      : `Sincronização Manual (Sheets): ${newlyImportedCount} importados, ${duplicatesCount} ignorados, ${filteredCount} indicações mantidas como sugestões.`;
-
-    const nextLog: SyncLog = {
-      id: `log_${Date.now()}`,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      action: logMsg,
-      recordsSynced: newlyImportedCount,
-      recordsIgnored: duplicatesCount,
-      operator: isBackground ? 'Frequência de Sincronia' : (session?.email || 'Sistema')
-    };
-
-    db.syncLogs.unshift(nextLog);
-    saveDatabase(db);
-
-    res.json({ success: true, imported: newlyImportedCount, ignored: duplicatesCount, filtered: filteredCount });
   });
 
   // Vite middleware for development or Static Assets for Production
