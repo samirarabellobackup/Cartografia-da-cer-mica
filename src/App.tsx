@@ -59,9 +59,6 @@ export default function App() {
       } else if (hash === '#fornecedores') {
         setActiveTab('fornecedores');
         setActivePortal('public');
-      } else if (hash === '#agenda') {
-        setActiveTab('agenda');
-        setActivePortal('public');
       } else if (hash === '#sobre') {
         setActiveTab('sobre');
         setActivePortal('public');
@@ -1172,18 +1169,6 @@ export default function App() {
                 >
                   Fornecedores
                 </button>
-                
-                <button
-                  id="nav-tab-btn-agenda"
-                  onClick={() => setActiveTab('agenda')}
-                  className={`pb-1 transition-all cursor-pointer ${
-                    activeTab === 'agenda' 
-                      ? 'text-terracotta border-b-2 border-terracotta' 
-                      : 'text-earth-dark/70 hover:text-terracotta'
-                  }`}
-                >
-                  Agenda
-                </button>
 
                 <button
                   id="nav-tab-btn-sobre"
@@ -1237,12 +1222,6 @@ export default function App() {
                   className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'fornecedores' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
                 >
                   Fornecedores
-                </button>
-                <button
-                  onClick={() => { setActiveTab('agenda'); setMobileMenuOpen(false); }}
-                  className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'agenda' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
-                >
-                  Agenda
                 </button>
                 <button
                   onClick={() => { setActiveTab('sobre'); setMobileMenuOpen(false); }}
@@ -1474,17 +1453,6 @@ export default function App() {
                   </div>
                 )}
               </div>
-            )}
-
-            {activeTab === 'agenda' && (
-              <EventCalendar 
-                establishments={establishments} 
-                onSelectEstablishment={(estId) => {
-                  setSelectedId(estId);
-                  setActiveTab('mapa');
-                  setIsProfileDrawerOpen(false);
-                }}
-              />
             )}
 
             {activeTab === 'sobre' && (
