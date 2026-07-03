@@ -406,7 +406,17 @@ async function startServer() {
       const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
       const res = await fetch(url);
       if (!res.ok) {
-        console.error(`[AutoSync] Erro HTTP ao buscar planilha: ${res.status}`);
+        const errMsg = `Erro HTTP ao buscar planilha: ${res.status} - ${res.statusText}`;
+        console.error(`[AutoSync] ${errMsg}`);
+        db.syncLogs.unshift({
+          id: `log_err_${Date.now()}`,
+          timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+          action: `Erro de Sincronização: ${errMsg}`,
+          recordsSynced: 0,
+          recordsIgnored: 0,
+          operator: 'Sincronizador Automático'
+        });
+        saveDatabase(db);
         return;
       }
       const csvText = await res.text();
@@ -417,9 +427,15 @@ async function startServer() {
       }
 
       const dataRows = rows.slice(1);
+      
+      // Store IDs of establishments matched/synced during this run to detect deletions later
+      const activeGoogleFormEstIds: string[] = [];
+      
       let imported = 0;
-      let duplicate = 0;
-      let ignored = 0;
+      let updated = 0;
+      let duplicateCount = 0;
+      let ignoredCount = 0;
+      let geocodingErrors = 0;
 
       for (let i = 0; i < dataRows.length; i++) {
         const cols = dataRows[i];
@@ -433,7 +449,7 @@ async function startServer() {
                           intent.toLowerCase().includes('meu espaço');
 
         if (!isMySpace) {
-          ignored++;
+          ignoredCount++;
           continue;
         }
 
@@ -442,43 +458,39 @@ async function startServer() {
         const instagramRaw = (cols[7] || '').trim();
         const whatsappRaw = (cols[8] || '').trim();
 
+        if (!nameRaw) {
+          ignoredCount++;
+          continue;
+        }
+
         // 1. DATA TREATMENT LAYER (CAMADA DE PROCESSAMENTO)
-        // Clean and Capitalize Name
+        // Clean, replace multiple spaces and trim
         let cleanName = nameRaw.replace(/\s+/g, ' ').trim();
         cleanName = titleCase(cleanName);
 
-        // Parse location
+        // Parse and standardize location
         const { city: cityRaw, state: stateRaw, neighborhood: neighborhoodRaw } = parseLocationText(locationRaw);
         let cleanState = normalizeStateName(stateRaw);
         let cleanCity = cleanState === 'Distrito Federal' ? 'Brasília' : titleCase(cityRaw.trim());
         let cleanNeighborhood = titleCase(neighborhoodRaw.trim());
 
-        // Instagram and WhatsApp treatment
+        // Standardize Instagram (remove spaces, ensure starting with @)
         let cleanInstagram = instagramRaw.replace(/\s+/g, '').trim();
         if (cleanInstagram && !cleanInstagram.startsWith('@')) {
           cleanInstagram = '@' + cleanInstagram;
         }
+
+        // Standardize WhatsApp (digits only)
         let cleanWhatsapp = whatsappRaw.replace(/\D/g, '').trim();
 
-        // 2. DEDUPLICATION (DEDUPLICAÇÃO)
-        const isDuplicate = db.establishments.some(e => {
-          const sameName = e.name.toLowerCase().replace(/\s+/g, '') === cleanName.toLowerCase().replace(/\s+/g, '');
-          const sameCity = e.city.toLowerCase().trim() === cleanCity.toLowerCase().trim();
-          const sameState = e.state.toLowerCase().trim() === cleanState.toLowerCase().trim();
-          const sameInsta = cleanInstagram && e.instagram && e.instagram.toLowerCase().trim() === cleanInstagram.toLowerCase().trim();
-          const samePhone = cleanWhatsapp && e.whatsapp && e.whatsapp.replace(/\D/g, '') === cleanWhatsapp;
-          
-          return (sameName && sameCity && sameState) || sameInsta || (sameName && samePhone);
-        });
-
-        if (isDuplicate) {
-          duplicate++;
-          continue;
-        }
-
-        // Determine Category (Sub-categoria inteligente baseada no nome e especialidades)
-        let detectedCategory: Category = 'Ateliê';
+        // Standardize Specialties from spreadsheet columns
         const specialtiesCol = [cols[10], cols[15], cols[20], cols[21]].filter(Boolean).join(', ').toLowerCase();
+        const cleanSpecialtiesVal = specialtiesCol
+          ? specialtiesCol.split(',').map(s => s.trim()).filter(Boolean)
+          : ['Modelagem Manual', 'Alta Temperatura'];
+
+        // Standardize Categories
+        let detectedCategory: Category = 'Ateliê';
         const textToSearch = `${cleanName} ${specialtiesCol}`.toLowerCase();
         if (textToSearch.includes('fornecedor') || textToSearch.includes('loja') || textToSearch.includes('insumos') || textToSearch.includes('ferramentas') || textToSearch.includes('venda de argila')) {
           detectedCategory = 'Fornecedor';
@@ -490,7 +502,7 @@ async function startServer() {
           detectedCategory = 'Ceramista';
         }
 
-        // 3. GEOCODING AND DF HANDLING (DISTRITO FEDERAL)
+        // 2. GEOCODING AND DF HANDLING (DISTRITO FEDERAL SPECIFIC LOGIC)
         let coordinates: [number, number] = [-23.55052, -46.633308]; // fallback SP
         let geocodingStatus: 'valid' | 'pending_review' | 'failed' = 'pending_review';
 
@@ -512,63 +524,119 @@ async function startServer() {
           } else if (STATE_CENTERS_LOCAL[cleanState]) {
             coordinates = STATE_CENTERS_LOCAL[cleanState];
             geocodingStatus = 'valid';
+          } else {
+            geocodingErrors++;
           }
         }
 
-        const cleanSpecialtiesVal = specialtiesCol
-          ? specialtiesCol.split(',').map(s => s.trim()).filter(Boolean)
-          : ['Modelagem Manual', 'Alta Temperatura'];
+        // 3. MATCH OR CREATE (DEDUPLICATION AND UPDATE DETECTION)
+        // Check if we already have this record in the local database
+        const existingEstIndex = db.establishments.findIndex(e => {
+          const sameName = e.name.toLowerCase().replace(/\s+/g, '') === cleanName.toLowerCase().replace(/\s+/g, '');
+          const sameCity = e.city.toLowerCase().trim() === cleanCity.toLowerCase().trim();
+          const sameState = e.state.toLowerCase().trim() === cleanState.toLowerCase().trim();
+          const sameInsta = cleanInstagram && e.instagram && e.instagram.toLowerCase().trim() === cleanInstagram.toLowerCase().trim();
+          const samePhone = cleanWhatsapp && e.whatsapp && e.whatsapp.replace(/\D/g, '') === cleanWhatsapp;
+          
+          return (sameName && sameCity && sameState) || sameInsta || (sameName && samePhone);
+        });
 
-        // Add to establishments (Ensure Homologado / Perfil Oficial and Origin: Google Forms)
-        const newEst: EstablishmentWithHomologation = {
-          id: `est_auto_${Date.now()}_${i}_${Math.floor(Math.random() * 1000)}`,
-          name: cleanName,
-          category: detectedCategory,
-          specialties: cleanSpecialtiesVal as any,
-          services: [],
-          privacy: 'neighborhood', // default privacy neighborhood for safety
-          address: 'Consulte as redes sociais',
-          neighborhood: cleanNeighborhood || 'Centro',
-          city: cleanCity,
-          state: cleanState,
-          coordinates,
-          geocodingStatus,
-          originalAddress: locationRaw || 'Não informado',
-          description: `Espaço de cerâmica integrado colaborativamente. Localizado em ${cleanCity} - ${cleanState}.`,
-          instagram: cleanInstagram,
-          whatsapp: cleanWhatsapp,
-          photo: 'https://images.unsplash.com/photo-1565192647048-f997ded879f9?auto=format&fit=crop&w=800&q=80',
-          isPremium: false,
-          claimed: false,
-          rating: 4.8,
-          reviewsCount: 0,
-          homologationStatus: 'Perfil Oficial',
-          origin: 'Google Forms',
-          team: []
-        };
-
-        db.establishments.unshift(newEst);
-        imported++;
+        if (existingEstIndex !== -1) {
+          // Alteração de Registro existente (Detectar Alterações)
+          const existing = db.establishments[existingEstIndex];
+          
+          // Update details from sheet
+          existing.name = cleanName;
+          existing.category = detectedCategory;
+          existing.specialties = cleanSpecialtiesVal as any;
+          existing.instagram = cleanInstagram;
+          existing.whatsapp = cleanWhatsapp;
+          existing.city = cleanCity;
+          existing.state = cleanState;
+          existing.neighborhood = cleanNeighborhood || existing.neighborhood || 'Centro';
+          existing.originalAddress = locationRaw;
+          existing.coordinates = coordinates;
+          existing.geocodingStatus = geocodingStatus;
+          
+          // Ensure it keeps its source attributes
+          existing.origin = 'Google Forms';
+          
+          activeGoogleFormEstIds.push(existing.id);
+          updated++;
+        } else {
+          // Novo Registro (Detectar Novos Registros)
+          const newId = `est_auto_${Date.now()}_${i}_${Math.floor(Math.random() * 1000)}`;
+          const newEst: EstablishmentWithHomologation = {
+            id: newId,
+            name: cleanName,
+            category: detectedCategory,
+            specialties: cleanSpecialtiesVal as any,
+            services: [],
+            privacy: 'neighborhood', // Bairro e Cidade aproximados por segurança
+            address: 'Consulte as redes sociais',
+            neighborhood: cleanNeighborhood || 'Centro',
+            city: cleanCity,
+            state: cleanState,
+            coordinates,
+            geocodingStatus,
+            originalAddress: locationRaw || 'Não informado',
+            description: `Espaço de cerâmica integrado colaborativamente. Localizado em ${cleanCity} - ${cleanState}.`,
+            instagram: cleanInstagram,
+            whatsapp: cleanWhatsapp,
+            photo: 'https://images.unsplash.com/photo-1565192647048-f997ded879f9?auto=format&fit=crop&w=800&q=80',
+            isPremium: false,
+            claimed: false,
+            rating: 4.8,
+            reviewsCount: 0,
+            homologationStatus: 'Perfil Oficial',
+            origin: 'Google Forms',
+            team: []
+          };
+          db.establishments.unshift(newEst);
+          activeGoogleFormEstIds.push(newId);
+          imported++;
+        }
       }
 
-      if (imported > 0) {
+      // 4. DETECT AND REMOVE DELETED RECORDS (REMOVER REGISTROS EXCLUÍDOS)
+      // Any establishment with origin === 'Google Forms' whose ID is NOT in the synced list was deleted from the Sheet!
+      const beforeFilterLength = db.establishments.length;
+      db.establishments = db.establishments.filter(e => {
+        if (e.origin === 'Google Forms') {
+          return activeGoogleFormEstIds.includes(e.id);
+        }
+        return true; // Keep manual mocks or standard elements
+      });
+      const deletedCount = beforeFilterLength - db.establishments.length;
+
+      // Save database if anything has changed
+      if (imported > 0 || updated > 0 || deletedCount > 0) {
         saveDatabase(db);
-        console.log(`[AutoSync] Sincronização automática realizada com sucesso: ${imported} registros importados.`);
+        console.log(`[AutoSync] Concluído: ${imported} importados, ${updated} atualizados, ${deletedCount} excluídos.`);
         
-        const logMsg = `Sincronização Automática Realizada: ${imported} novos registros do formulário adicionados ao mapa.`;
+        const logMsg = `Sincronização Concluída: ${imported} novos, ${updated} atualizados, ${deletedCount} excluídos.`;
         const nextLog: SyncLog = {
           id: `log_${Date.now()}`,
           timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
           action: logMsg,
-          recordsSynced: imported,
-          recordsIgnored: duplicate,
+          recordsSynced: imported + updated,
+          recordsIgnored: ignoredCount + duplicateCount,
           operator: 'Sincronizador Automático'
         };
         db.syncLogs.unshift(nextLog);
         saveDatabase(db);
       }
-    } catch (err) {
-      console.error('[AutoSync] Erro na sincronização automática:', err);
+    } catch (err: any) {
+      console.error('[AutoSync] Erro crítico na sincronização automática:', err);
+      db.syncLogs.unshift({
+        id: `log_err_${Date.now()}`,
+        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        action: `Erro Crítico de Sincronização: ${err?.message || err}`,
+        recordsSynced: 0,
+        recordsIgnored: 0,
+        operator: 'Sincronizador Automático'
+      });
+      saveDatabase(db);
     }
   }
 
