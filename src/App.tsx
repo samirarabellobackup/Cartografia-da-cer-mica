@@ -34,6 +34,7 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [ateliesSearch, setAteliesSearch] = useState('');
   const [fornecedoresSearch, setFornecedoresSearch] = useState('');
+  const [prestadoresSearch, setPrestadoresSearch] = useState('');
 
   const [showAdminControlBar, setShowAdminControlBar] = useState(false);
 
@@ -59,7 +60,10 @@ export default function App() {
       } else if (hash === '#fornecedores') {
         setActiveTab('fornecedores');
         setActivePortal('public');
-      } else if (hash === '#sobre') {
+      } else if (hash === '#prestadores') {
+        setActiveTab('prestadores');
+        setActivePortal('public');
+      } else if (hash === '#sobre' || hash === '#sobre-o-projeto') {
         setActiveTab('sobre');
         setActivePortal('public');
       } else if (isMentor) {
@@ -573,6 +577,21 @@ export default function App() {
     if (!isSupplierCategory) return false;
     if (!fornecedoresSearch.trim()) return true;
     const query = fornecedoresSearch.toLowerCase();
+    return (
+      est.name.toLowerCase().includes(query) ||
+      est.city.toLowerCase().includes(query) ||
+      est.state.toLowerCase().includes(query) ||
+      est.specialties.some(s => s.toLowerCase().includes(query)) ||
+      (est.neighborhood && est.neighborhood.toLowerCase().includes(query))
+    );
+  });
+
+  const filteredPrestadoresList = establishments.filter(est => {
+    // Include Ceramista, Professor, Assistência Técnica, Queima or anyone offering services
+    const isPrestadorCategory = est.category === 'Ceramista' || est.category === 'Professor' || est.category === 'Assistência Técnica' || est.category === 'Queima' || est.category === 'Coworking';
+    if (!isPrestadorCategory) return false;
+    if (!prestadoresSearch.trim()) return true;
+    const query = prestadoresSearch.toLowerCase();
     return (
       est.name.toLowerCase().includes(query) ||
       est.city.toLowerCase().includes(query) ||
@@ -1171,6 +1190,18 @@ export default function App() {
                 </button>
 
                 <button
+                  id="nav-tab-btn-prestadores"
+                  onClick={() => setActiveTab('prestadores')}
+                  className={`pb-1 transition-all cursor-pointer ${
+                    activeTab === 'prestadores' 
+                      ? 'text-terracotta border-b-2 border-terracotta' 
+                      : 'text-earth-dark/70 hover:text-terracotta'
+                  }`}
+                >
+                  Prestadores de Serviços
+                </button>
+
+                <button
                   id="nav-tab-btn-sobre"
                   onClick={() => setActiveTab('sobre')}
                   className={`pb-1 transition-all cursor-pointer ${
@@ -1179,7 +1210,7 @@ export default function App() {
                       : 'text-earth-dark/70 hover:text-terracotta'
                   }`}
                 >
-                  Sobre
+                  Sobre o Projeto
                 </button>
               </nav>
 
@@ -1224,10 +1255,16 @@ export default function App() {
                   Fornecedores
                 </button>
                 <button
+                  onClick={() => { setActiveTab('prestadores'); setMobileMenuOpen(false); }}
+                  className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'prestadores' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
+                >
+                  Prestadores de Serviços
+                </button>
+                <button
                   onClick={() => { setActiveTab('sobre'); setMobileMenuOpen(false); }}
                   className={`w-full text-left p-3 rounded-lg block transition-all ${activeTab === 'sobre' ? 'bg-sand-bg text-terracotta' : 'hover:bg-sand-bg/55 text-earth-dark'}`}
                 >
-                  Sobre
+                  Sobre o Projeto
                 </button>
               </motion.div>
             )}
@@ -1276,10 +1313,7 @@ export default function App() {
                       establishment={selectedEstablishment}
                       onClose={() => setSelectedId(null)}
                       onOpenProfile={() => {
-                        const activeTier = selectedEstablishment.planTier || (selectedEstablishment.isPremium ? 'atelie' : 'gratuito');
-                        if (activeTier !== 'gratuito') {
-                          setIsProfileDrawerOpen(true);
-                        }
+                        setIsProfileDrawerOpen(true);
                       }}
                       onClaimProfile={() => {
                         setIsProfileDrawerOpen(true);
@@ -1435,6 +1469,79 @@ export default function App() {
                         <div className="mt-5 pt-4 border-t border-clay-border/40 flex items-center justify-between gap-3">
                           <span className="text-[10px] font-mono text-earth-gray font-bold uppercase tracking-wider">
                             Fornecedor Homologado
+                          </span>
+                          <button 
+                            onClick={() => {
+                              setSelectedId(est.id);
+                              setCenterCoordinates(est.coordinates);
+                              setActiveTab('mapa');
+                              setIsProfileDrawerOpen(true);
+                            }}
+                            className="px-4 py-2 bg-terracotta hover:bg-sienna text-white text-xs font-bold rounded-xl transition-all shadow-sm uppercase tracking-wider cursor-pointer"
+                          >
+                            Ver no Mapa
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'prestadores' && (
+              <div className="space-y-6 py-4 animate-fadeIn">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-clay-border pb-5">
+                  <div>
+                    <h2 className="text-2xl font-serif italic font-bold text-earth-dark">Prestadores de Serviços</h2>
+                    <p className="text-xs text-earth-gray">Conecte-se com prestadores de serviços: modelagem autoral, queimas, assistência técnica e aulas de torno.</p>
+                  </div>
+                  <div className="relative">
+                    <input 
+                      type="text"
+                      placeholder="Buscar por nome, cidade ou especialidade..."
+                      value={prestadoresSearch}
+                      onChange={(e) => setPrestadoresSearch(e.target.value)}
+                      className="w-full md:w-80 px-4 py-2.5 bg-white border-2 border-clay-border rounded-xl text-xs focus:border-terracotta focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {filteredPrestadoresList.length === 0 ? (
+                  <div className="text-center py-12 bg-white rounded-2xl border border-clay-border p-8">
+                    <p className="text-sm text-earth-gray">Nenhum prestador de serviço encontrado para a busca realizada.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {filteredPrestadoresList.map(est => (
+                      <div key={est.id} className="bg-white rounded-2xl border-2 border-clay-border hover:border-terracotta p-5 flex flex-col justify-between shadow-sm transition-all">
+                        <div className="space-y-3">
+                          <div className="aspect-video w-full rounded-xl overflow-hidden bg-sand-bg border border-clay-border">
+                            <img src={est.photo} alt={est.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          </div>
+                          <div>
+                            <span className="text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-sand-card text-terracotta">
+                              {est.category}
+                            </span>
+                            <h3 className="text-lg font-serif italic font-bold text-earth-dark mt-1 leading-tight">{est.name}</h3>
+                            <p className="text-xs text-earth-gray flex items-center gap-1 mt-1">
+                              <MapPin className="w-3.5 h-3.5 text-terracotta" />
+                              {est.city} - {est.state} {est.neighborhood ? `(${est.neighborhood})` : ''}
+                            </p>
+                          </div>
+                          <p className="text-xs text-gray-600 line-clamp-3 leading-relaxed">{est.description}</p>
+                          <div className="flex flex-wrap gap-1">
+                            {est.specialties.slice(0, 3).map(s => (
+                              <span key={s} className="px-2 py-0.5 rounded bg-gray-50 border border-gray-100 text-[10px] text-gray-600">
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="mt-5 pt-4 border-t border-clay-border/40 flex items-center justify-between gap-3">
+                          <span className="text-[10px] font-mono text-earth-gray font-bold uppercase tracking-wider">
+                            Serviço Especializado
                           </span>
                           <button 
                             onClick={() => {
