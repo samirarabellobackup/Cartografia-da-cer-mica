@@ -316,12 +316,60 @@ interface ServerDatabase {
   integrationConfig: IntegrationConfig;
 }
 
+// Helper to clean, filter, and deduplicate establishments
+function cleanDatabaseAndDeduplicate(establishments: EstablishmentWithHomologation[]): EstablishmentWithHomologation[] {
+  // Keep only establishments that are from Google Forms
+  const googleFormsEsts = establishments.filter(e => e.origin === 'Google Forms');
+
+  const seenNamesAndCities = new Set<string>();
+  const seenInstagrams = new Set<string>();
+  const seenWhatsapps = new Set<string>();
+  const uniqueEsts: EstablishmentWithHomologation[] = [];
+
+  for (const est of googleFormsEsts) {
+    const normName = est.name.toLowerCase().replace(/\s+/g, '').trim();
+    const normCity = est.city.toLowerCase().trim();
+    const normState = est.state.toLowerCase().trim();
+    const nameCityKey = `${normName}|${normCity}|${normState}`;
+
+    const normInsta = est.instagram ? est.instagram.toLowerCase().replace(/[@\s]/g, '').trim() : '';
+    const normPhone = est.whatsapp ? est.whatsapp.replace(/\D/g, '').trim() : '';
+
+    let isDuplicate = false;
+
+    if (seenNamesAndCities.has(nameCityKey)) {
+      isDuplicate = true;
+    }
+    if (normInsta && seenInstagrams.has(normInsta)) {
+      isDuplicate = true;
+    }
+    if (normPhone && seenWhatsapps.has(normPhone)) {
+      isDuplicate = true;
+    }
+
+    if (!isDuplicate) {
+      uniqueEsts.push(est);
+      seenNamesAndCities.add(nameCityKey);
+      if (normInsta) seenInstagrams.add(normInsta);
+      if (normPhone) seenWhatsapps.add(normPhone);
+    } else {
+      console.log(`[Deduplicator] Removido ateliê duplicado no carregamento: ${est.name} em ${est.city}-${est.state}`);
+    }
+  }
+
+  return uniqueEsts;
+}
+
 // Ensure database file exists or seed it
 function loadDatabase(): ServerDatabase {
   if (fs.existsSync(DB_FILE)) {
     try {
       const content = fs.readFileSync(DB_FILE, 'utf-8');
-      return JSON.parse(content);
+      const dbParsed = JSON.parse(content);
+      // Ensure we immediately scrub duplicates and keep only Google Forms "divulgando" entries
+      dbParsed.establishments = cleanDatabaseAndDeduplicate(dbParsed.establishments);
+      saveDatabase(dbParsed);
+      return dbParsed;
     } catch (e) {
       console.error('Error reading database file, reseeding...', e);
     }
@@ -329,17 +377,7 @@ function loadDatabase(): ServerDatabase {
 
   // Create initial seeded state
   const initialDb: ServerDatabase = {
-    establishments: INITIAL_ESTABLISHMENTS.map(est => {
-      // Ensure existing establishments have a default status and geocoding state
-      const estWithH = est as EstablishmentWithHomologation;
-      return {
-        ...estWithH,
-        homologationStatus: estWithH.homologationStatus || 'Perfil Oficial',
-        geocodingStatus: estWithH.geocodingStatus || 'valid',
-        origin: estWithH.origin || 'importação',
-        team: estWithH.team || []
-      };
-    }),
+    establishments: [], // Start with empty so we only populate from Google Forms sync!
     auditLogs: [
       {
         id: 'aud_init',
@@ -441,27 +479,31 @@ async function startServer() {
         const cols = dataRows[i];
         if (cols.length < 5) continue;
 
-        const intent = (cols[2] || '').trim();
+        // cols[3] is "Você fazendo uma indicação ou divulgação" (Intent)
+        const intent = (cols[3] || '').trim();
         
-        // STRICT RULE: Only import "Divulgando meu espaço"
-        const isMySpace = intent.toLowerCase().includes('divulgando meu espaço') ||
-                          intent.toLowerCase().includes('divulgando minha empresa') ||
-                          intent.toLowerCase().includes('meu espaço');
+        // STRICT RULE: Only import "Divulgando meu espaço" / "Divulgando - minha empresa"
+        const isMySpace = intent.toLowerCase().includes('divulgando');
 
         if (!isMySpace) {
           ignoredCount++;
           continue;
         }
 
+        // cols[4] is the Establishment Name
         const nameRaw = (cols[4] || '').trim();
-        const locationRaw = (cols[6] || '').trim();
-        const instagramRaw = (cols[7] || '').trim();
-        const whatsappRaw = (cols[8] || '').trim();
-
         if (!nameRaw) {
           ignoredCount++;
           continue;
         }
+
+        // cols[7] is State, cols[8] is City, cols[9] is Neighborhood / RA
+        const stateRaw = (cols[7] || '').trim();
+        const cityRaw = (cols[8] || '').trim();
+        const neighborhoodRaw = (cols[9] || '').trim();
+        const instagramRaw = (cols[10] || '').trim();
+        const whatsappRaw = (cols[11] || '').trim();
+        const websiteRaw = (cols[12] || '').trim();
 
         // 1. DATA TREATMENT LAYER (CAMADA DE PROCESSAMENTO)
         // Clean, replace multiple spaces and trim
@@ -469,7 +511,6 @@ async function startServer() {
         cleanName = titleCase(cleanName);
 
         // Parse and standardize location
-        const { city: cityRaw, state: stateRaw, neighborhood: neighborhoodRaw } = parseLocationText(locationRaw);
         let cleanState = normalizeStateName(stateRaw);
         let cleanCity = cleanState === 'Distrito Federal' ? 'Brasília' : titleCase(cityRaw.trim());
         let cleanNeighborhood = titleCase(neighborhoodRaw.trim());
@@ -484,36 +525,47 @@ async function startServer() {
         let cleanWhatsapp = whatsappRaw.replace(/\D/g, '').trim();
 
         // Standardize Specialties from spreadsheet columns
-        const specialtiesCol = [cols[10], cols[15], cols[20], cols[21]].filter(Boolean).join(', ').toLowerCase();
-        const cleanSpecialtiesVal = specialtiesCol
-          ? specialtiesCol.split(',').map(s => s.trim()).filter(Boolean)
-          : ['Modelagem Manual', 'Alta Temperatura'];
+        // cols[13] is Fornecedor details, cols[18] is Prestador details, cols[23], [24] is Ateliê details, cols[25] is description
+        const specialtiesCol = [cols[13], cols[18], cols[23], cols[24], cols[25]].filter(Boolean).join(', ').toLowerCase();
+        let cleanSpecialtiesVal: string[] = [];
+        // Clean checkbox symbols and separate
+        const specParts = specialtiesCol.replace(/[☐☒☑]/g, '').split(/[,\n]/);
+        for (let part of specParts) {
+          part = part.trim();
+          if (part && part !== 'pular. não se enquadra nesta categoria' && part !== 'não se enquadra nesta categoria' && part.length > 2) {
+            cleanSpecialtiesVal.push(titleCase(part));
+          }
+        }
+        if (cleanSpecialtiesVal.length === 0) {
+          cleanSpecialtiesVal = ['Modelagem Manual', 'Alta Temperatura'];
+        }
 
-        // Standardize Categories
+        // Standardize Categories based on column 2 ("O que você está cadastrando?")
         let detectedCategory: Category = 'Ateliê';
-        const textToSearch = `${cleanName} ${specialtiesCol}`.toLowerCase();
-        if (textToSearch.includes('fornecedor') || textToSearch.includes('loja') || textToSearch.includes('insumos') || textToSearch.includes('ferramentas') || textToSearch.includes('venda de argila')) {
+        const typeRaw = (cols[2] || '').toLowerCase();
+        if (typeRaw.includes('fornecedor') || typeRaw.includes('material') || typeRaw.includes('insumo')) {
           detectedCategory = 'Fornecedor';
-        } else if (textToSearch.includes('escola') || textToSearch.includes('ateliê escola') || textToSearch.includes('curso')) {
-          detectedCategory = 'Ateliê Escola';
-        } else if (textToSearch.includes('professor') || textToSearch.includes('professora') || textToSearch.includes('instrutor')) {
-          detectedCategory = 'Professor';
-        } else if (textToSearch.includes('ceramista')) {
+        } else if (typeRaw.includes('prestador') || typeRaw.includes('serviço')) {
           detectedCategory = 'Ceramista';
+        } else if (typeRaw.includes('escola') || specialtiesCol.includes('escola') || specialtiesCol.includes('curso')) {
+          detectedCategory = 'Ateliê Escola';
+        } else {
+          detectedCategory = 'Ateliê';
         }
 
         // 2. GEOCODING AND DF HANDLING (DISTRITO FEDERAL SPECIFIC LOGIC)
         let coordinates: [number, number] = [-23.55052, -46.633308]; // fallback SP
         let geocodingStatus: 'valid' | 'pending_review' | 'failed' = 'pending_review';
 
+        const combinedAddress = `${cleanNeighborhood}, ${cleanCity} - ${cleanState}`;
         if (cleanState === 'Distrito Federal') {
-          const ra = detectDFRegiaoAdministrativa(locationRaw);
+          const ra = detectDFRegiaoAdministrativa(combinedAddress) || 'Plano Piloto';
           if (ra && DF_RA_COORDINATES[ra]) {
             coordinates = DF_RA_COORDINATES[ra];
             geocodingStatus = 'valid';
             cleanNeighborhood = ra;
           } else {
-            coordinates = [-15.7801, -47.9292]; // Geographic Center of DF
+            coordinates = [-15.7801, -47.9292]; // Center of DF
             geocodingStatus = 'valid';
           }
         } else {
@@ -554,9 +606,12 @@ async function startServer() {
           existing.city = cleanCity;
           existing.state = cleanState;
           existing.neighborhood = cleanNeighborhood || existing.neighborhood || 'Centro';
-          existing.originalAddress = locationRaw;
+          existing.originalAddress = combinedAddress;
           existing.coordinates = coordinates;
           existing.geocodingStatus = geocodingStatus;
+          if (websiteRaw) {
+            existing.website = websiteRaw.startsWith('http') ? websiteRaw : `https://${websiteRaw}`;
+          }
           
           // Ensure it keeps its source attributes
           existing.origin = 'Google Forms';
@@ -579,10 +634,11 @@ async function startServer() {
             state: cleanState,
             coordinates,
             geocodingStatus,
-            originalAddress: locationRaw || 'Não informado',
-            description: `Espaço de cerâmica integrado colaborativamente. Localizado em ${cleanCity} - ${cleanState}.`,
+            originalAddress: combinedAddress,
+            description: (cols[25] || '').trim() || `Espaço de cerâmica integrado colaborativamente. Localizado em ${cleanCity} - ${cleanState}.`,
             instagram: cleanInstagram,
             whatsapp: cleanWhatsapp,
+            website: websiteRaw ? (websiteRaw.startsWith('http') ? websiteRaw : `https://${websiteRaw}`) : undefined,
             photo: 'https://images.unsplash.com/photo-1565192647048-f997ded879f9?auto=format&fit=crop&w=800&q=80',
             isPremium: false,
             claimed: false,
@@ -598,14 +654,15 @@ async function startServer() {
         }
       }
 
-      // 4. DETECT AND REMOVE DELETED RECORDS (REMOVER REGISTROS EXCLUÍDOS)
+      // 4. DETECT AND REMOVE DELETED RECORDS (REMOVER REGISTROS EXCLUÍDOS E MOCKS ANTIGOS)
       // Any establishment with origin === 'Google Forms' whose ID is NOT in the synced list was deleted from the Sheet!
+      // Also filter out any non-Google Forms items (so only clean "divulgando" remains)
       const beforeFilterLength = db.establishments.length;
       db.establishments = db.establishments.filter(e => {
         if (e.origin === 'Google Forms') {
           return activeGoogleFormEstIds.includes(e.id);
         }
-        return true; // Keep manual mocks or standard elements
+        return false; // Keep only genuine Google Forms entries
       });
       const deletedCount = beforeFilterLength - db.establishments.length;
 
