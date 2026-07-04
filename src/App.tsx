@@ -236,6 +236,67 @@ export default function App() {
     services: []
   });
 
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [notification, setNotification] = useState<{
+    message: string;
+    type: 'success' | 'error' | 'info';
+    visible: boolean;
+  } | null>(null);
+
+  const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setNotification({ message, type, visible: true });
+    setTimeout(() => {
+      setNotification(prev => prev ? { ...prev, visible: false } : null);
+    }, 6000);
+  };
+
+  const handleManualSync = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    showNotification('Conectando ao Google Sheets e buscando novos dados...', 'info');
+
+    try {
+      const response = await fetch('/api/sync-sheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erro na sincronização: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.success) {
+        // Fetch fresh list from server
+        const estRes = await fetch('/api/establishments');
+        if (estRes.ok) {
+          const freshEsts = await estRes.json();
+          setEstablishments(freshEsts);
+        }
+
+        const { imported, updated, duplicateCount } = data;
+        const msg = `${imported || 0} novos espaços importados, ${updated || 0} registros atualizados, ${duplicateCount || 0} duplicados ignorados.`;
+        showNotification(msg, 'success');
+
+        handleAddAuditLog(
+          'Sincronização Manual Sucedida',
+          `Sincronização manual acionada pelo usuário: ${msg}`
+        );
+
+        // Center on Distrito Federal automatically after synchronization
+        setCenterCoordinates([-15.7801, -47.9292]);
+      } else {
+        throw new Error(data.error || 'Erro na resposta do servidor.');
+      }
+    } catch (err: any) {
+      console.error('[Sync] Error syncing:', err);
+      showNotification(`Falha na sincronização: ${err.message || err}`, 'error');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   // Save database states on changes
   useEffect(() => {
     localStorage.setItem('ceramapa_establishments', JSON.stringify(establishments));
@@ -529,14 +590,18 @@ export default function App() {
       }
     }
 
-    // 1. Text Query matches name, city, neighborhood or specialties
-    const query = filters.query.toLowerCase();
+    // 1. Text Query matches name, city, state, neighborhood, category, specialties, services or description
+    const query = filters.query.toLowerCase().trim();
     const nameMatch = est.name.toLowerCase().includes(query);
     const cityMatch = est.city.toLowerCase().includes(query);
-    const neighMatch = est.neighborhood.toLowerCase().includes(query);
+    const stateMatch = est.state.toLowerCase().includes(query);
+    const neighMatch = est.neighborhood ? est.neighborhood.toLowerCase().includes(query) : false;
+    const categoryMatch = est.category.toLowerCase().includes(query);
     const specMatch = est.specialties.some(s => s.toLowerCase().includes(query));
+    const servMatch = est.services ? est.services.some(s => s.toLowerCase().includes(query)) : false;
+    const descMatch = est.description ? est.description.toLowerCase().includes(query) : false;
     
-    const matchesQuery = !query || nameMatch || cityMatch || neighMatch || specMatch;
+    const matchesQuery = !query || nameMatch || cityMatch || stateMatch || neighMatch || categoryMatch || specMatch || servMatch || descMatch;
 
     // 2. Category Match
     const matchesCategory = !filters.category || est.category === filters.category;
@@ -1214,8 +1279,27 @@ export default function App() {
                 </button>
               </nav>
 
-              {/* Mobile Menu Trigger */}
+              {/* Sincronizar Mapa action button & Mobile Menu Trigger */}
               <div className="flex items-center gap-3">
+                <button
+                  onClick={handleManualSync}
+                  disabled={isSyncing}
+                  className="flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2.5 bg-terracotta hover:bg-[#A95738] active:bg-earth-dark text-white text-[10px] sm:text-xs font-bold uppercase tracking-wider rounded-xl shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                >
+                  {isSyncing ? (
+                    <>
+                      <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin shrink-0"></div>
+                      <span className="hidden sm:inline">Sincronizando...</span>
+                      <span className="inline sm:hidden">Sinc...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileSpreadsheet className="w-4 h-4 shrink-0" />
+                      <span>Sincronizar Mapa</span>
+                    </>
+                  )}
+                </button>
+
                 <button 
                   onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                   className="lg:hidden p-2 rounded-xl border border-clay-border text-earth-dark hover:bg-sand-bg cursor-pointer transition-all"
@@ -1266,6 +1350,16 @@ export default function App() {
                 >
                   Sobre o Projeto
                 </button>
+                <div className="pt-2 border-t border-clay-border/40">
+                  <button
+                    onClick={() => { handleManualSync(); setMobileMenuOpen(false); }}
+                    disabled={isSyncing}
+                    className="w-full flex items-center justify-center gap-2 p-3 bg-terracotta hover:bg-[#A95738] text-white font-bold rounded-xl transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar Planilha'}</span>
+                  </button>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -1842,6 +1936,56 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* Floating custom notification/toast overlay */}
+      <AnimatePresence>
+        {notification && notification.visible && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className={`fixed bottom-6 right-6 z-[99999] max-w-sm p-4 rounded-2xl shadow-xl border flex items-start gap-3 backdrop-blur-md transition-all ${
+              notification.type === 'success'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                : notification.type === 'error'
+                ? 'bg-red-50 border-red-200 text-red-900'
+                : 'bg-blue-50 border-blue-200 text-blue-900'
+            }`}
+          >
+            <div className={`p-1.5 rounded-xl shrink-0 ${
+              notification.type === 'success'
+                ? 'bg-emerald-100 text-emerald-700'
+                : notification.type === 'error'
+                ? 'bg-red-100 text-red-700'
+                : 'bg-blue-100 text-blue-700'
+            }`}>
+              {notification.type === 'success' ? (
+                <Check className="w-4 h-4" />
+              ) : notification.type === 'error' ? (
+                <Flame className="w-4 h-4" />
+              ) : (
+                <Sparkles className="w-4 h-4" />
+              )}
+            </div>
+            <div className="flex-1 space-y-0.5">
+              <p className="text-xs font-bold uppercase tracking-wider">
+                {notification.type === 'success'
+                  ? 'Sucesso'
+                  : notification.type === 'error'
+                  ? 'Ocorreu um erro'
+                  : 'Sincronização'}
+              </p>
+              <p className="text-xs font-medium leading-relaxed opacity-90">{notification.message}</p>
+            </div>
+            <button
+              onClick={() => setNotification(prev => prev ? { ...prev, visible: false } : null)}
+              className="text-earth-gray hover:text-earth-dark p-0.5 font-bold text-xs shrink-0 cursor-pointer"
+            >
+              ✕
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   );

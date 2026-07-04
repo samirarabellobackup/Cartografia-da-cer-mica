@@ -683,6 +683,14 @@ async function startServer() {
         db.syncLogs.unshift(nextLog);
         saveDatabase(db);
       }
+
+      return {
+        imported,
+        updated,
+        deletedCount,
+        ignoredCount,
+        duplicateCount
+      };
     } catch (err: any) {
       console.error('[AutoSync] Erro crítico na sincronização automática:', err);
       db.syncLogs.unshift({
@@ -1430,8 +1438,8 @@ async function startServer() {
   app.post('/api/sync-sheets', async (req, res) => {
     try {
       console.log('[API] Chamada manual de sincronização de planilha recebida.');
-      await syncWithGoogleSheetsInternal();
-      res.json({ success: true, message: 'Sincronização processada com sucesso via Camada de Tratamento de Dados.' });
+      const stats = await syncWithGoogleSheetsInternal();
+      res.json({ success: true, ...stats, message: 'Sincronização processada com sucesso via Camada de Tratamento de Dados.' });
     } catch (err: any) {
       console.error('[API] Erro na sincronização manual:', err);
       res.status(500).json({ error: 'Erro ao processar sincronização.', details: err.message });

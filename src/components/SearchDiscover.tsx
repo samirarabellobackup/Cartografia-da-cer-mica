@@ -366,12 +366,19 @@ export default function SearchDiscover({
 
       // Query text search
       if (filters.query) {
-        const q = filters.query.toLowerCase();
+        const q = filters.query.toLowerCase().trim();
         const nameM = est.name.toLowerCase().includes(q);
         const cityM = est.city.toLowerCase().includes(q);
-        const neighM = est.neighborhood.toLowerCase().includes(q);
+        const stateM = est.state.toLowerCase().includes(q);
+        const neighM = est.neighborhood ? est.neighborhood.toLowerCase().includes(q) : false;
+        const categoryM = est.category.toLowerCase().includes(q);
         const specM = est.specialties.some(s => s.toLowerCase().includes(q));
-        if (!nameM && !cityM && !neighM && !specM) return false;
+        const servM = est.services ? est.services.some(s => s.toLowerCase().includes(q)) : false;
+        const descM = est.description ? est.description.toLowerCase().includes(q) : false;
+
+        if (!nameM && !cityM && !stateM && !neighM && !categoryM && !specM && !servM && !descM) {
+          return false;
+        }
       }
 
       return true;
@@ -496,6 +503,28 @@ export default function SearchDiscover({
         {/* PANEL A: EXPLORAR */}
         {activePanel === 'explorar' && (
           <div className="space-y-3">
+            {/* Intelligent Search Input */}
+            <div className="relative">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-earth-gray/70" />
+              <input
+                type="text"
+                placeholder="Busque por nome, cidade, estado, especialidade, argila..."
+                value={filters.query || ''}
+                onChange={(e) => onFilterChange({ ...filters, query: e.target.value })}
+                className="w-full pl-10 pr-9 py-2.5 bg-[#FAF9F5] border border-clay-border rounded-xl text-xs font-semibold focus:border-terracotta focus:ring-1 focus:ring-terracotta focus:outline-none placeholder-earth-gray/70 text-earth-dark shadow-inner transition-all"
+              />
+              {filters.query && (
+                <button
+                  type="button"
+                  onClick={() => onFilterChange({ ...filters, query: '' })}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-earth-gray hover:text-terracotta bg-sand-bg/60 hover:bg-sand-bg w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] transition-all cursor-pointer"
+                  title="Limpar Pesquisa"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
             {/* Quick Filter Tags */}
             <div>
               <p className="text-[9px] font-bold text-earth-gray uppercase tracking-wider mb-1.5">

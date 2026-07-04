@@ -312,7 +312,10 @@ export default function Map({ establishments, selectedId, onSelectEstablishment,
     if (!map) return;
 
     if (centerCoordinates) {
-      map.setView(centerCoordinates, 13, { animate: true, duration: 1 });
+      // If centering on Distrito Federal center, use a broader zoom level (10) to display the entire DF
+      const isDF = Math.abs(centerCoordinates[0] - (-15.7801)) < 0.01 && Math.abs(centerCoordinates[1] - (-47.9292)) < 0.01;
+      const zoomLevel = isDF ? 10 : 13;
+      map.setView(centerCoordinates, zoomLevel, { animate: true, duration: 1 });
     } else if (selectedId) {
       const selectedEst = establishments.find((e) => e.id === selectedId);
       if (selectedEst) {
